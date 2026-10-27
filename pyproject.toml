@@ -14,6 +14,7 @@ dependencies = ["numpy>=1.26,<3", "scipy>=1.11,<2"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10"]
+plots = ["matplotlib>=3.8,<4"]
 
 [project.scripts]
 fruit-fly-demo = "fruit_fly_stuff.demo:main"
