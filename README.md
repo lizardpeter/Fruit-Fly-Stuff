@@ -4,6 +4,14 @@ An open-source project exploring **persistent, experience-dependent learning** i
 
 > **Prototype status:** This version implements a **synthetic three-neuron circuit**, not the full fruit fly brain. It validates spiking dynamics, reward-driven learning, and persistent memory before we attempt biological reconstruction.
 
+## Two independent simulation tracks
+
+**A. [Whole FlyWire connectome on your PC](docs/WHOLE_BRAIN.md):** downloads FAFB v783, keeps all 139,255 neuron IDs and all neuron-pair connections in the *unfiltered Codex contact-count table*, then runs a compact sparse mathematical model. It resumes its voltages and spikes from a local checkpoint. **This does not yet model realistic fly physiology, plasticity, behavior or consciousness.**
+
+**B. Small biophysical neuron experiment:** separate Hodgkin–Huxley conductance model (being added as its own experiment).
+
+All recorded connections means the released *per-pair counts*; this is not a per-synapse geometry reconstruction. See the separate experiment documentation and scientific caveats.
+
 ## What's implemented
 
 - Sparse directed connections and simplified discrete-time spiking neurons (NumPy + SciPy).
