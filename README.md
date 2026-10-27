@@ -13,6 +13,23 @@ An open-source project exploring **persistent, experience-dependent learning** i
 - An association experiment with separate save/restore and recall.
 - Automated unit tests and a short GitHub Actions workflow.
 
+## Run in GitHub Actions — no local setup
+
+1. Open **[Run Brain Experiment](https://github.com/lizardpeter/Fruit-Fly-Stuff/actions/workflows/brain-experiment.yml)** in GitHub Actions.
+2. Select **Run workflow**, ensure **main** is selected, and choose **3 trials** (the default). Leave **reset** unchecked.
+3. Start the workflow; when it finishes, open the run's **Summary** for learned weights and recall results.
+4. Run it again to load the previous run's checkpoint and continue learning.
+
+The first run starts with a cue weight of **0.10**; 3 learning trials increase it to **0.64** (not yet sufficient to activate the output neuron). The second run restores the saved state, trains for 3 more trials, and increases it to **1.18**, after which the cue alone activates the output neuron. This is a reproducible toy example of experience-dependent learning across different ephemeral runner machines.
+
+### Persistent state and artifacts
+
+On its first run, the workflow creates a separate **simulation-state** branch with the small `state/toy-brain.npz` checkpoint. Later runs restore that state and commit its updated weights and neural state back to the same branch. Runs are serialized so two runs cannot race to overwrite the checkpoint. Each run also uploads the checkpoint and `results/experiment.json` as a 30-day GitHub Actions artifact, and includes a human-readable table in the Actions run summary.
+
+Selecting **reset** restarts the toy circuit and replaces the saved checkpoint. State history remains in Git until it is deleted. Do not use this small-file Git approach for full-brain models or large datasets; use dedicated object storage for those. These bounded workflows are for developing and validating the simulator, not indefinite scientific compute on hosted Actions.
+
+**Scientific caveat:** this demo models three synthetic neurons, not the fly's actual connectome. The biologically informed simulation is future work.
+
 ## Run it
 
 Python 3.11 or newer is required.
