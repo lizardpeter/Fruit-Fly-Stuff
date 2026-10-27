@@ -8,9 +8,16 @@ An open-source project exploring **persistent, experience-dependent learning** i
 
 **A. [Whole FlyWire connectome on your PC](docs/WHOLE_BRAIN.md):** downloads FAFB v783, keeps all 139,255 neuron IDs and all neuron-pair connections in the *unfiltered Codex contact-count table*, then runs a compact sparse mathematical model. It resumes its voltages and spikes from a local checkpoint. **This does not yet model realistic fly physiology, plasticity, behavior or consciousness.**
 
-**B. Small biophysical neuron experiment:** separate Hodgkin–Huxley conductance model (being added as its own experiment).
+**B. [Three Hodgkin–Huxley biophysical neurons](docs/THREE_NEURONS.md):** a separate three-cell electrical simulation with sodium/potassium ion channels, synaptic excitation/inhibition, and CSV/PNG membrane-voltage traces.
 
 All recorded connections means the released *per-pair counts*; this is not a per-synapse geometry reconstruction. See the separate experiment documentation and scientific caveats.
+
+### Windows quick start (two independent programs)
+
+- Double-click `Run-Whole-Brain.cmd` to download, prepare, and run the full sparse connectome continuously with checkpoints (**16+ GB RAM recommended for preprocessing**).
+- Double-click `Run-Three-Neurons.cmd` to simulate three detailed membrane models and save voltage plots locally.
+
+Both scripts create a virtual environment as needed. Requires Python 3.11+ with the `py` Windows launcher installed. You can run either experiment without the other.
 
 ## What's implemented
 
