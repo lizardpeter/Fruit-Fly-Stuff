@@ -26,8 +26,12 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - name: Install
-        run: python -m pip install -e '.[dev]'
+        run: python -m pip install -e '.[dev,plots]'
       - name: Test
         run: python -m pytest -q
+      - name: Exercise Hodgkin-Huxley plots and CSV export
+        run: |
+          python -m fruit_fly_stuff.biophysical --plot --duration-ms 80
+          python -c "from pathlib import Path; assert Path('results/biophysical/hh_neurons.png').stat().st_size > 1000; assert Path('results/biophysical/hh_neurons.csv').stat().st_size > 100"
       - name: Check demo
         run: python -m fruit_fly_stuff.demo --checkpoint state/toy-brain.npz

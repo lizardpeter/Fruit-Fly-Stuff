@@ -1,0 +1,52 @@
+name: Connectome data integration smoke test
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - src/fruit_fly_stuff/whole_brain.py
+      - .github/workflows/connectome-smoke.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate-real-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: python -m pip install -e .
+      - name: Download real FAFB v783 full neuron and unfiltered edge exports
+        run: python -m fruit_fly_stuff.whole_brain download --variant unfiltered
+      - name: Build all-neuron sparse connectivity cache
+        run: python -m fruit_fly_stuff.whole_brain prepare --variant unfiltered
+      - name: Assert complete real release imported
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from fruit_fly_stuff.whole_brain import load_graph
+          matrix, roots, info = load_graph(Path('data/fafb783/processed'))
+          print(info)
+          assert len(roots) == 139255, "Unexpected v783 neuron count: source may have changed"
+          assert matrix.shape == (139255, 139255)
+          assert info["variant"] == "unfiltered"
+          assert matrix.nnz > 1_000_000
+          assert info["synaptic_contacts_in_input"] > 1_000_000
+          PY
+      - name: Run 10 live steps and produce state checkpoint
+        run: |
+          python -m fruit_fly_stuff.whole_brain run --steps 10 --stimulated-count 100 --checkpoint-every 10
+          python - <<'PY'
+          from pathlib import Path
+          import numpy as np
+          with np.load('state/whole-brain.npz', allow_pickle=False) as state:
+              assert int(state['steps'][0]) == 10
+              assert state['voltage'].shape == (139255,)
+          PY
