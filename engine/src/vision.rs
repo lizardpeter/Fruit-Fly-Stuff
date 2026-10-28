@@ -2,6 +2,7 @@
 //! Still an approximation: not a biologically calibrated compound eye.
 
 use glam::{Mat4, Vec3};
+use std::{fs, io, path::Path};
 
 use crate::world::FlyState;
 
@@ -63,6 +64,39 @@ impl VisionFrame {
             return Err("RGBA frame byte count must equal width*height*4");
         }
         Ok(Self { width, height, rgba8 })
+    }
+
+    /// Save a 32-bit uncompressed BMP that Windows can open without plugins.
+    /// BMP rows are bottom-up and channels are BGRA (our frame is RGBA).
+    pub fn save_bmp(&self, path: &Path) -> io::Result<()> {
+        use io::Write;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let bytes = u32::try_from(self.rgba8.len())
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "image too large"))?;
+        let file_size = 54_u32.checked_add(bytes)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "BMP too large"))?;
+        let mut out = fs::File::create(path)?;
+        out.write_all(b"BM")?;
+        out.write_all(&file_size.to_le_bytes())?;
+        out.write_all(&[0u8; 4])?;
+        out.write_all(&54u32.to_le_bytes())?;
+        out.write_all(&40u32.to_le_bytes())?;
+        out.write_all(&(self.width as i32).to_le_bytes())?;
+        out.write_all(&(self.height as i32).to_le_bytes())?;
+        out.write_all(&1u16.to_le_bytes())?;
+        out.write_all(&32u16.to_le_bytes())?;
+        out.write_all(&0u32.to_le_bytes())?;
+        out.write_all(&bytes.to_le_bytes())?;
+        out.write_all(&[0u8; 16])?;
+        for row in (0..self.height as usize).rev() {
+            for pixel in self.rgba8[row * self.width as usize * 4
+                ..(row + 1) * self.width as usize * 4].chunks_exact(4) {
+                out.write_all(&[pixel[2], pixel[1], pixel[0], pixel[3]])?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -136,6 +170,17 @@ mod tests {
             let (left, right) = extract_landmark_signals(&frame);
             assert!(left == 0.0 && right == 0.0);
         }
+    }
+    #[test]
+    fn bmp_output_is_windows_readable() {
+        let path = std::env::temp_dir().join(format!("fruit-fly-eye-{}.bmp", std::process::id()));
+        let frame = VisionFrame::new(2,1,vec![255,0,0,255, 0,0,255,255]).unwrap();
+        frame.save_bmp(&path).unwrap();
+        let data = std::fs::read(&path).unwrap();
+        assert_eq!(&data[..2], b"BM");
+        assert_eq!(data.len(), 62);
+        assert_eq!(&data[54..58], &[0,0,255,255]);
+        std::fs::remove_file(path).unwrap();
     }
     #[test]
     fn frame_requires_exact_rgba_length() {
