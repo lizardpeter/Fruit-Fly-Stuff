@@ -39,7 +39,7 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def download_data(data_dir: Path, *, variant: str = "unfiltered") -> None:
+def download_data(data_dir: Path, *, variant: str = "unfiltered", annotations: bool = False) -> None:
     """Fetch official public static exports (no credentials assumed).
 
     If mirrors or access policies change, users can manually place the two
@@ -48,7 +48,7 @@ def download_data(data_dir: Path, *, variant: str = "unfiltered") -> None:
     if variant not in FILES:
         raise ValueError("variant must be filtered or unfiltered")
     data_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("neurons.csv.gz", FILES[variant]):
+    for name in ("neurons.csv.gz", FILES[variant], *(("classification.csv.gz",) if annotations else ())):
         destination = data_dir / name
         if destination.exists() and destination.stat().st_size > 0:
             print(f"Already downloaded: {destination}")
@@ -319,6 +319,9 @@ def main() -> None:
         sub.add_argument("--variant", choices=tuple(FILES), default="unfiltered")
         if cmd == "prepare":
             sub.add_argument("--cache-dir", type=Path)
+        else:
+            sub.add_argument("--annotations", action="store_true",
+                             help="also download source-matched optic/descending classifications")
     sub = commands.add_parser("run")
     sub.add_argument("--cache-dir", type=Path, default=Path("data/fafb783/processed"))
     sub.add_argument("--checkpoint", type=Path, default=Path("state/whole-brain.npz"))
@@ -331,7 +334,7 @@ def main() -> None:
     sub.add_argument("--checkpoint-every", type=int, default=500)
     args = parser.parse_args()
     if args.command == "download":
-        download_data(args.data_dir, variant=args.variant)
+        download_data(args.data_dir, variant=args.variant, annotations=args.annotations)
     elif args.command == "prepare":
         print(json.dumps(prepare(args.data_dir, variant=args.variant,
                                  cache_dir=args.cache_dir), indent=2))
