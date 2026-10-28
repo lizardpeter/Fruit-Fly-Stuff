@@ -109,7 +109,7 @@ def compile_retinotopy(source: Path, cache_dir: Path, output: Path, *,
         raise ValueError("calibration does not cover selected columns")
     result = {
         "schema": 1, "dataset": "FlyWire FAFB v783",
-        "facet_layout": "two-721-projected-hex-halves-v1",
+        "facet_layout": "two-721-projected-hex-halves-v2",
         "facets": FACETS,
         "mapping_kind": "UNVALIDATED_axial_fit" if approximate else "user_supplied_unverified_calibration",
         "source_column_sha256": sha256_file(source),
@@ -128,7 +128,7 @@ def compile_retinotopy(source: Path, cache_dir: Path, output: Path, *,
 def load_mapping(path: Path, cache_dir: Path):
     obj = json.loads(path.read_text(encoding="utf-8"))
     if (obj.get("schema") != 1 or obj.get("dataset") != "FlyWire FAFB v783" or
-        obj.get("facet_layout") != "two-721-projected-hex-halves-v1" or
+        obj.get("facet_layout") != "two-721-projected-hex-halves-v2" or
         obj.get("facets") != FACETS or
         obj.get("connectome_sha256") != sha256_file(cache_dir / "adjacency.npz")):
         raise ValueError("retina mapping incompatible with this graph/version")

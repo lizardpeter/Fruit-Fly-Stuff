@@ -63,13 +63,16 @@ pub fn hex_facets(width: u32, height: u32) -> Result<Vec<Facet>, &'static str> {
             for r in (-HEX_RADIUS).max(-q - HEX_RADIUS)..=(HEX_RADIUS).min(-q + HEX_RADIUS) {
                 // A hexagonal lattice normalized into each half of a
                 // **single** perspective view; this is not full 270° vision.
-                let x = (3.0_f32.sqrt() * (q as f32 + r as f32 * 0.5))
-                    / (3.0_f32.sqrt() * 3.0 * HEX_RADIUS as f32);
-                let y = (1.5 * r as f32) / (3.0 * HEX_RADIUS as f32);
-                // The lattice spans a circle-like patch with a margin.
-                let local_x = (0.5 + x * 0.88) * (half - 1.0);
+                // Normalize by the real axial extrema. The old 3*R
+                // denominator filled only the middle third of each eye
+                // half, leaving objects straight ahead unsampled.
+                let x = (q as f32 + r as f32 * 0.5) / HEX_RADIUS as f32;
+                let y = r as f32 / HEX_RADIUS as f32;
+                // Cover almost the whole half-image, reserving a small
+                // boundary for the nine-pixel acceptance footprint.
+                let local_x = (0.5 + x * 0.48) * (half - 1.0);
                 let px = local_x + side.code() as f32 * half;
-                let py = (0.5 - y * 0.88) * (height as f32 - 1.0);
+                let py = (0.5 - y * 0.48) * (height as f32 - 1.0);
                 let pale = ((u32::from(index) * 73 + side.code() * 19) % 10) < 3;
                 facets.push(Facet {
                     index, side, hex_q: q as i16, hex_r: r as i16,
@@ -240,6 +243,14 @@ mod tests {
         assert!(faces.iter().take(721).all(|f| f.pixel_x < 64.0));
         assert!(faces.iter().skip(721).all(|f| f.pixel_x >= 64.0));
         assert!(faces.iter().all(|f| f.pixel_y >= 0.0 && f.pixel_y < 96.0));
+        // Catch regressions where projected facets occupy too narrow a
+        // central patch and miss the actual camera's forward view.
+        let left = &faces[..721];
+        let right = &faces[721..];
+        assert!(left.iter().any(|f| f.pixel_x > 58.0 && (f.pixel_y-48.0).abs() < 8.0));
+        assert!(right.iter().any(|f| f.pixel_x < 70.0 && (f.pixel_y-48.0).abs() < 8.0));
+        assert!(faces.iter().any(|f| f.pixel_y < 5.0));
+        assert!(faces.iter().any(|f| f.pixel_y > 90.0));
     }
     #[test]
     fn r7_uv_is_unavailable_not_invented() {
