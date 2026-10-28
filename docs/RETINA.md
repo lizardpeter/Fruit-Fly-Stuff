@@ -88,3 +88,7 @@ Full-brain checkpoints are now separated by mapping mode: `state/bridge-full-cla
 ### Optical GPU/CPU correctness and dark scenes
 
 The Vulkan workflow now enables `FRUIT_FLY_RETINA_VERIFY_GPU=1` for an actual 1,442-facet shader-versus-CPU numerical comparison on the first rendered frame. The CPU reference decodes sRGB when the offscreen render target has an sRGB format. Any discrepancy above 0.012 causes a failing runtime test. A fully black image is valid; the previous non-black requirement has been removed. Full-image GPU-to-host copies and CPU readback happen only for explicit eye snapshots or the parity test; ordinary sensory updates use only the small Vulkan compute-buffer readback. This test checks software consistency, **not biological accuracy**.
+
+### Deterministic visual-event experiment
+
+For a test of actual environmental input rather than an assumed neuron spike, set `FRUIT_FLY_VISION_TRIAL=1` and `FRUIT_FLY_SMOKE_FRAMES=240` in the Vulkan engine environment. The world briefly displays a white bar directly ahead of a stationary fly (time 0.75–1.50 s). The real GPU-rendered camera, Vulkan optical sampler and stateful photoreceptor model must generate both an ON transient when the object appears and an OFF transient when it disappears. GitHub Actions asserts both signals are present. This tests the conversion chain, **not** the biological correctness of its calibration or a fly behavior.

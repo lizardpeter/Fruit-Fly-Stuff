@@ -92,6 +92,14 @@ jobs:
             ./engine/target/debug/fruit-fly-engine 2>&1 | tee "$RUNNER_TEMP/black-eye-log.txt"
           grep -q "Retina GPU/CPU parity PASS:" "$RUNNER_TEMP/black-eye-log.txt"
           grep -q "Vulkan smoke: presented 5 frames" "$RUNNER_TEMP/black-eye-log.txt"
+      - name: World visual event: verify real GPU retina responds to light onset and offset
+        run: |
+          timeout 65s xvfb-run -a env \
+            VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
+            FRUIT_FLY_SMOKE_FRAMES=240 \
+            FRUIT_FLY_VISION_TRIAL=1 \
+            ./engine/target/debug/fruit-fly-engine 2>&1 | tee "$RUNNER_TEMP/retina-trial-log.txt"
+          grep -q "Retina visual trial PASS:" "$RUNNER_TEMP/retina-trial-log.txt"
       - uses: actions/upload-artifact@v4
         with:
           name: fly-eye-camera-snapshot
