@@ -43,13 +43,13 @@ jobs:
       - name: Verify the software Vulkan ICD
         run: |
           ls -l /usr/share/vulkan/icd.d
-          VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json vulkaninfo --summary
+          VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json vulkaninfo --summary
       - name: Build native window executable
         run: cargo build --manifest-path engine/Cargo.toml
       - name: Present five 3D Vulkan frames in virtual X11
         run: |
           timeout 45s xvfb-run -a env \
-            VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json \
+            VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
             FRUIT_FLY_SMOKE_FRAMES=5 \
             ./engine/target/debug/fruit-fly-engine
 
