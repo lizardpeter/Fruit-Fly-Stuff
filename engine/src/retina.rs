@@ -159,6 +159,15 @@ impl Retina {
         let mut sum = [0.0; 2];
         for (i, facet) in self.facets.iter().copied().enumerate() {
             let input = spectral_proxy(rgb[i], facet.pale);
+            // First exposure sets the adaptation baseline. Otherwise the
+            // entire scene appears as an artificial light-onset flash.
+            if !self.initialized {
+                self.fast[i] = input;
+                self.adaptation[i] = input;
+                output.push([0.0; RECEPTORS_PER_FACET]);
+                off_contrast.push(0.0);
+                continue;
+            }
             let mut graded = [0.0; RECEPTORS_PER_FACET];
             for c in 0..RECEPTORS_PER_FACET {
                 let prev = self.fast[i][c];
@@ -221,9 +230,20 @@ mod tests {
         assert!(b[7] > a[7]);
     }
     #[test]
+    fn first_frame_is_a_baseline_not_an_artificial_flash() {
+        let mut r = Retina::new(128, 96).unwrap();
+        let white = image([255; 4], [255; 4]);
+        let initial = r.step(&white, 0.016).unwrap();
+        assert!(initial.graded.iter().all(|f| f.iter().all(|x| *x == 0.0)));
+        assert!(initial.off_contrast.iter().all(|x| *x == 0.0));
+        assert!(r.step(&white, 0.016).unwrap().graded[0][0] == 0.0);
+    }
+
+    #[test]
     fn temporal_signals_have_eye_laterality_and_adapt() {
         let mut retina = Retina::new(128, 96).unwrap();
         let frame = image([255, 255, 255, 255], [0, 0, 0, 255]);
+        retina.step(&image([0, 0, 0, 255], [0, 0, 0, 255]), 0.016).unwrap();
         let first = retina.step(&frame, 0.016).unwrap();
         assert_eq!(first.facets, 1442);
         assert!(!first.uv_available);
