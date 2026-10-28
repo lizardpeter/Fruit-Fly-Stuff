@@ -1,5 +1,5 @@
-//! Fly-eye interface contract. This module does NOT pretend to capture pixels yet.
-//! The eventual Vulkan offscreen render target will fill VisionFrame.rgba8.
+//! Fly-eye perspective camera and GPU-readback visual feature extraction.
+//! Still an approximation: not a biologically calibrated compound eye.
 
 use glam::{Mat4, Vec3};
 
@@ -66,6 +66,35 @@ impl VisionFrame {
     }
 }
 
+/// Extract the salience of colored world landmarks in left/right halves of a
+/// **rendered RGBA image**. This is an engineered color feature, not a retina.
+/// Values are in [0,1]; the human observer's camera cannot influence them.
+pub fn extract_landmark_signals(frame: &VisionFrame) -> (f32, f32) {
+    let width = frame.width as usize;
+    let height = frame.height as usize;
+    let mut sum = [0.0_f32; 2];
+    let mut count = [0_usize; 2];
+    for (i, p) in frame.rgba8.chunks_exact(4).enumerate() {
+        let x = i % width;
+        let y = i / width;
+        if y >= height { break; }
+        let r = p[0] as f32 / 255.0;
+        let g = p[1] as f32 / 255.0;
+        let b = p[2] as f32 / 255.0;
+        // Detect orange/red and blue objects, suppress green floor / blue sky.
+        let orange = (r - g * 1.3).max(0.0) * (r - b * 1.1).max(0.0);
+        let blue = (b - r * 1.25).max(0.0) * (b - g * 1.10).max(0.0);
+        let salient = (orange + blue).min(1.0);
+        let side = if x < width / 2 { 0 } else { 1 };
+        sum[side] += salient;
+        count[side] += 1;
+    }
+    (
+        (sum[0] / (count[0].max(1) as f32) * 15.0).clamp(0.0, 1.0),
+        (sum[1] / (count[1].max(1) as f32) * 15.0).clamp(0.0, 1.0),
+    )
+}
+
 /// Future bridge from an image (or compound-eye receptor samples) to neural
 /// stimulation. Implementations must specify neuron IDs, encoding, and timing.
 pub trait SensoryEncoder {
@@ -82,6 +111,19 @@ mod tests {
         let pose = FlyState::default();
         let transformed = cam.view_projection(&pose).to_cols_array();
         assert!(transformed.iter().all(|v| v.is_finite()));
+    }
+    #[test]
+    fn rendered_color_features_are_hemisphere_specific() {
+        let mut rgba = vec![0_u8; 8 * 4 * 4];
+        for y in 0..4 {
+            for x in 0..4 {
+                let i=(y*8+x)*4;
+                rgba[i..i+4].copy_from_slice(&[230, 30, 20, 255]);
+            }
+        }
+        let frame = VisionFrame::new(8,4,rgba).unwrap();
+        let (left,right) = extract_landmark_signals(&frame);
+        assert!(left>0.5 && right<0.01);
     }
     #[test]
     fn frame_requires_exact_rgba_length() {
