@@ -1,0 +1,39 @@
+name: Retina column metadata validation
+
+on:
+  pull_request:
+    paths:
+      - "src/fruit_fly_stuff/retinotopy.py"
+      - "src/fruit_fly_stuff/whole_brain.py"
+      - ".github/workflows/retina-columns.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Inspect exact FAFB v783 column-assignment schema
+        run: |
+          python - <<'PY'
+          import csv,gzip,shutil
+          from pathlib import Path
+          from urllib.request import urlopen
+          d=Path('data/fafb783')
+          d.mkdir(parents=True,exist_ok=True)
+          url='https://storage.googleapis.com/flywire-data/codex/data/fafb/783/column_assignment.csv.gz'
+          with urlopen(url,timeout=120) as src,(d/'column_assignment.csv.gz').open('wb') as dst:
+              shutil.copyfileobj(src,dst)
+          with gzip.open(d/'column_assignment.csv.gz','rt',newline='') as source:
+              table=csv.DictReader(source)
+              print('COLUMN_ASSIGNMENT_HEADER:',table.fieldnames,flush=True)
+              for _ in range(3):
+                  print('COLUMN_ASSIGNMENT_SAMPLE:',next(table,None),flush=True)
+          PY
