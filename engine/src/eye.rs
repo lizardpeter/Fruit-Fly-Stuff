@@ -3,7 +3,8 @@
 //! a perspective-camera approximation, not an insect compound-eye model.
 use ash::vk;
 use std::error::Error;
-use fruit_fly_engine::vision::{EyeCamera, VisionFrame, extract_landmark_signals};
+use fruit_fly_engine::vision::{EyeCamera, VisionFrame};
+use fruit_fly_engine::retina::Retina;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -51,6 +52,7 @@ pub struct EyePass {
     ready: bool,
     last_signals: (f32, f32),
     captured: u64,
+    retina: Retina,
 }
 
 impl EyePass {
@@ -86,6 +88,7 @@ impl EyePass {
             camera, color, color_memory, color_view, depth, depth_memory,
             depth_view, staging, staging_memory, color_format: swapchain_format,
             ready: false, last_signals: (0.0, 0.0), captured: 0,
+            retina: Retina::new(camera.width, camera.height)?,
         })
     }
 
@@ -105,7 +108,14 @@ impl EyePass {
             for px in rgba.chunks_exact_mut(4) { px.swap(0, 2); }
         }
         let frame = VisionFrame::new(self.camera.width, self.camera.height, rgba)?;
-        self.last_signals = extract_landmark_signals(&frame);
+        // First working pass: GPU image readback -> 1442 hexagonal
+        // photoreceptor samplers -> adaptation dynamics. Sampling currently
+        // runs on CPU; the separate Vulkan compute stage is next.
+        let sample = self.retina.step(&frame, 1.0 / 60.0)?;
+        self.last_signals = (
+            sample.hemispheric_change[0],
+            sample.hemispheric_change[1],
+        );
         // Optional snapshot of the fly's OWN view, not the human observer's.
         // Every ~120 frames; no disk I/O unless explicitly configured.
         if self.captured % 120 == 0 {
