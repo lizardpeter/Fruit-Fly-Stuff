@@ -67,3 +67,7 @@ Planned in order:
 The Python whole-brain simulator and Rust 3D world **do not yet communicate**. The fly is visibly shaped like a fly, but its behavior is currently scripted or keyboard-controlled. Real fly eyes are compound eyes, so a simple perspective camera is only a first sensor approximation. Do not call it photorealistic vision or autonomous biological behavior.
 
 The CI verifies compiling and tests on Windows/Linux, but GitHub-hosted runners generally cannot show a physical Vulkan window. A local GPU is required for end-to-end interactive rendering verification.
+
+## Viewing the fly-eye camera
+
+When launched with `Run-Neural-Fly.cmd`, real GPU fly-camera pixels are also saved periodically to `results/fly-eye.bmp` (BMP, 128×96 pixels). This comes from an independent offscreen Vulkan render pass rather than the human spectator camera. The filename can be overridden with the `FRUIT_FLY_EYE_SNAPSHOT` environment variable. The integration workflow tests the output and attaches one BMP image as a downloadable GitHub Actions artifact.

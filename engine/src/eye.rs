@@ -106,6 +106,15 @@ impl EyePass {
         }
         let frame = VisionFrame::new(self.camera.width, self.camera.height, rgba)?;
         self.last_signals = extract_landmark_signals(&frame);
+        // Optional snapshot of the fly's OWN view, not the human observer's.
+        // Every ~120 frames; no disk I/O unless explicitly configured.
+        if self.captured % 120 == 0 {
+            if let Ok(path) = std::env::var("FRUIT_FLY_EYE_SNAPSHOT") {
+                if let Err(error) = frame.save_bmp(std::path::Path::new(&path)) {
+                    eprintln!("Fly-eye snapshot failed: {error}");
+                }
+            }
+        }
         self.captured += 1;
         self.ready = false;
         Ok(())

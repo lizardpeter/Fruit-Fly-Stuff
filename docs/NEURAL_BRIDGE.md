@@ -36,3 +36,7 @@ The Rust renderer and Python neural worker are two **local** processes. They com
 ## Next biological milestone
 
 Improve the current head-mounted camera into compound-eye optic sampling, use measured retinotopic mappings rather than arbitrary within-class neuron selections, and validate which descending neuron signals actually correspond to motor behavior. Compare real-connectome behavior with shuffled wiring and disconnected controls. GPU computation of the neural graph is still future work; the current full graph runs on the CPU.
+
+### Inspect the fly's own view
+
+The Windows neural launcher sets `FRUIT_FLY_EYE_SNAPSHOT` to `results/fly-eye.bmp`. While the world is open, the engine writes a Windows-readable 128×96 screenshot of the **fly-mounted camera** roughly every 120 rendered frames. Open it with Windows Photos or Paint. The observer's orbit angle does not affect the eye camera. This is a single perspective view, not a compound-eye reconstruction.

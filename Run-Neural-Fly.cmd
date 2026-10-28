@@ -20,6 +20,7 @@ if /I "%MODE%"=="full" (
     ".venv\Scripts\python.exe" -m fruit_fly_stuff.whole_brain prepare || goto :fail
   )
 )
+set "FRUIT_FLY_EYE_SNAPSHOT=%CD%\results\fly-eye.bmp"
 set "FRUIT_FLY_BRAIN_MODE=%MODE%"
 set "FRUIT_FLY_ROOT=%CD%"
 set "FRUIT_FLY_PYTHON=%CD%\.venv\Scripts\python.exe"
