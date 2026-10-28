@@ -131,19 +131,30 @@ impl Retina {
         })
     }
 
-    /// State is continuous across frames. Both response and adaptation use
-    /// illustrative time constants, not type-specific fly measurements.
+    /// CPU reference optical sampling. The GPU compute kernel should produce
+    /// the same acceptance-kernel RGB samples before spectral conversion.
     pub fn step(&mut self, image: &VisionFrame, dt_seconds: f32) -> Result<RetinaSample, &'static str> {
-        if image.width != self.width || image.height != self.height
-            || !dt_seconds.is_finite() || !(0.0..=1.0).contains(&dt_seconds) || dt_seconds == 0.0 {
-            return Err("retina frame dimensions or timestep invalid");
+        if image.width != self.width || image.height != self.height {
+            return Err("retina frame dimensions invalid");
+        }
+        let inputs: Vec<[f32; 3]> = self.facets.iter().copied()
+            .map(|facet| sample_rgb(image, facet)).collect();
+        self.step_rgb_samples(&inputs, dt_seconds)
+    }
+
+    /// Optical sampler backend-independent receptor dynamics. GPU reads back
+    /// one RGB value per facet rather than the full source image.
+    pub fn step_rgb_samples(&mut self, rgb: &[[f32; 3]], dt_seconds: f32) -> Result<RetinaSample, &'static str> {
+        if rgb.len() != TOTAL_FACETS || rgb.iter().flatten().any(|x| !x.is_finite())
+            || !dt_seconds.is_finite() || dt_seconds <= 0.0 || dt_seconds > 1.0 {
+            return Err("retina RGB facet count, values or timestep invalid");
         }
         let fast_alpha = 1.0 - (-dt_seconds / 0.025).exp();
         let slow_alpha = 1.0 - (-dt_seconds / 0.200).exp();
         let mut output = Vec::with_capacity(TOTAL_FACETS);
         let mut sum = [0.0; 2];
         for (i, facet) in self.facets.iter().copied().enumerate() {
-            let input = spectral_proxy(sample_rgb(image, facet), facet.pale);
+            let input = spectral_proxy(rgb[i], facet.pale);
             let mut graded = [0.0; RECEPTORS_PER_FACET];
             for c in 0..RECEPTORS_PER_FACET {
                 let prev = self.fast[i][c];
@@ -211,6 +222,16 @@ mod tests {
         let mut last = first.hemispheric_change[0];
         for _ in 0..100 { last = retina.step(&frame, 0.016).unwrap().hemispheric_change[0]; }
         assert!(last < first.hemispheric_change[0] * 0.15);
+    }
+    #[test]
+    fn gpu_rgb_and_cpu_rgb_receptor_paths_agree() {
+        let frame = image([220,50,20,255], [20,60,220,255]);
+        let mut from_pixels = Retina::new(128,96).unwrap();
+        let mut from_facets = Retina::new(128,96).unwrap();
+        let rgb = from_facets.facets.iter().copied().map(|f| sample_rgb(&frame,f)).collect::<Vec<_>>();
+        let a = from_pixels.step(&frame,0.016).unwrap();
+        let b = from_facets.step_rgb_samples(&rgb,0.016).unwrap();
+        assert_eq!(a.graded, b.graded);
     }
     #[test]
     fn rejects_invalid_resolution_and_time() {
