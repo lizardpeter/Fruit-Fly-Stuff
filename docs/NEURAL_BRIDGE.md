@@ -40,3 +40,7 @@ Improve the current head-mounted camera into compound-eye optic sampling, use me
 ### Inspect the fly's own view
 
 The Windows neural launcher sets `FRUIT_FLY_EYE_SNAPSHOT` to `results/fly-eye.bmp`. While the world is open, the engine writes a Windows-readable 128×96 screenshot of the **fly-mounted camera** roughly every 120 rendered frames. Open it with Windows Photos or Paint. The observer's orbit angle does not affect the eye camera. This is a single perspective view, not a compound-eye reconstruction.
+
+## Individual projected-eye facets
+
+For the new 1,442-channel retina experiment, use [RETINA.md](RETINA.md) and the separate `Run-Retina-Fly-Approximate.cmd`. The source L1/L2 neuron identifiers are real, but the camera-to-column alignment is explicitly **not calibrated**.

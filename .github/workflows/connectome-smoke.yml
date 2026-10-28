@@ -25,7 +25,7 @@ jobs:
       - name: Install
         run: python -m pip install -e .
       - name: Download real FAFB v783 full neuron and unfiltered edge exports
-        run: python -m fruit_fly_stuff.whole_brain download --variant unfiltered --annotations
+        run: python -m fruit_fly_stuff.whole_brain download --variant unfiltered --annotations --retinotopy
       - name: Build all-neuron sparse connectivity cache
         run: python -m fruit_fly_stuff.whole_brain prepare --variant unfiltered
       - name: Assert complete real release imported
@@ -81,4 +81,27 @@ jobs:
           response=classified.step(1,1.0,0.0)
           print('Classified-mode neural response:', response)
           classified.save()
+          PY
+
+      - name: Compile FAFB L1/L2 columns and check individual receptor drive
+        run: |
+          python -m fruit_fly_stuff.retinotopy --approximate
+          python - <<'PY'
+          import numpy as np
+          from pathlib import Path
+          from fruit_fly_stuff.retinotopy import load_mapping
+          from fruit_fly_stuff.neural_bridge import BrainAdapter
+          cache=Path('data/fafb783/processed')
+          ids, facets, meta=load_mapping(cache/'retinotopy.json',cache)
+          print({k:v for k,v in meta.items() if k!='entries'})
+          assert len(ids)>1000
+          assert np.any(facets<721) and np.any(facets>=721)
+          b=BrainAdapter('full',cache,Path('state/retina-full-ci.npz'),mapping='retinotopic')
+          stimulus=np.zeros(1442,dtype=np.float32)
+          stimulus[int(facets[0])]=1.0
+          response=b.step(0,0,0,stimulus.tolist())
+          print('Per-facet FlyWire response:',response)
+          assert response['active']>0
+          assert b.hello()['retinotopy']['kind']=='UNVALIDATED_axial_fit'
+          b.save()
           PY
