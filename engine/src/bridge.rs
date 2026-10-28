@@ -75,6 +75,8 @@ fn spawn_python(root: &Path, mode: &str) -> std::io::Result<Child> {
     Command::new(python_program(root))
         .arg("-u").arg("-m").arg("fruit_fly_stuff.neural_bridge")
         .arg("--mode").arg(mode)
+        .arg("--mapping")
+        .arg(env::var("FRUIT_FLY_NEURAL_MAPPING").unwrap_or_else(|_| "classified".to_owned()))
         .arg("--cache-dir").arg(root.join("data").join("fafb783").join("processed"))
         .arg("--checkpoint").arg(root.join("state").join(format!("bridge-{mode}.npz")))
         .current_dir(root)

@@ -15,6 +15,7 @@ import numpy as np
 
 from .checkpoint import load_checkpoint, save_checkpoint
 from .annotated_mapping import classified_groups
+from .retinotopy import load_mapping, FACETS
 from .simulation import Connectome, SpikingBrain
 from .whole_brain import WholeBrain, load_graph, sha256_file
 
@@ -63,10 +64,11 @@ class BrainAdapter:
     def __init__(self, mode: str, cache_dir: Path, checkpoint: Path, mapping: str = "classified"):
         self.mode = mode
         self.checkpoint = checkpoint
-        if mapping not in ("classified", "probes"):
-            raise ValueError("mapping must be classified or probes")
+        if mapping not in ("classified", "probes", "retinotopic"):
+            raise ValueError("mapping must be classified, probes or retinotopic")
         self.mapping_name = mapping
         self.groups = None
+        self.facet_ids = self.retinotopic_neurons = self.mapping_metadata = None
         if mode == "toy":
             self.brain = load_checkpoint(checkpoint) if checkpoint.exists() else toy_brain()
             if self.brain.connectome.n_neurons != 4:
@@ -82,9 +84,17 @@ class BrainAdapter:
             self.brain = WholeBrain(graph, ids)
             if checkpoint.exists():
                 self.brain.restore(checkpoint, graph_sha=self.graph_hash)
-            if mapping == "classified":
+            if mapping in ("classified", "retinotopic"):
                 self.groups = classified_groups(cache_dir.parent / "classification.csv.gz", ids)
                 self.left = self.right = None
+                if mapping == "retinotopic":
+                    neurons, facets, info = load_mapping(cache_dir / "retinotopy.json", cache_dir)
+                    self.retinotopic_neurons, self.facet_ids = neurons, facets
+                    self.mapping_metadata = {
+                        "kind": info["mapping_kind"],
+                        "mapped_neurons": info["mapped_neurons"],
+                        "source_sha256": info["source_column_sha256"],
+                    }
             else:
                 self.left, self.right = strongest_disjoint_edges(graph)
             self.edges = graph.nnz
@@ -116,22 +126,35 @@ class BrainAdapter:
                  if self.groups is not None else
                  "strongest disjoint FlyWire neuron-pair probes (not anatomical motor/sensory assignments)"),
             "anatomical_groups": self.groups["metadata"] if self.groups is not None else None,
+            "retinotopy": self.mapping_metadata,
         }
 
-    def step(self, sequence: int, left: float, right: float) -> dict:
+    def step(self, sequence: int, left: float, right: float, facets=None) -> dict:
         for x in (left, right):
             if not np.isfinite(x) or x < 0 or x > 1:
                 raise ValueError("left and right must be finite in [0, 1]")
         if self.groups is not None:
-            # Anatomically assigned *broad classes*, experimental encoding:
-            # strong camera signal drives up to 256 optic-lobe neurons by side.
-            excite_parts = []
-            if left >= 0.04:
-                excite_parts.append(self.groups["visual_left"])
-            if right >= 0.04:
-                excite_parts.append(self.groups["visual_right"])
-            excite = (np.concatenate(excite_parts) if excite_parts else
-                      np.empty(0, dtype=np.int32))
+            if self.mapping_name == "retinotopic":
+                if facets is None:
+                    raise ValueError("retinotopic mode requires exactly 1442 facet signals")
+                signals = np.asarray(facets, dtype=np.float32)
+                if (signals.shape != (FACETS,) or not np.all(np.isfinite(signals))
+                    or np.any(signals < 0) or np.any(signals > 1)):
+                    raise ValueError("facet signals must be 1442 finite values in [0,1]")
+                # Crucial: the connection between virtual facet index and
+                # real L1/L2 column is an EXPLICITLY UNCALIBRATED fit unless
+                # a user calibration was provided. Only neuron IDs are real.
+                chosen = signals[self.facet_ids] >= 0.04
+                excite = np.unique(self.retinotopic_neurons[chosen])
+            else:
+                # Old broad-class software baseline, not accurate retinotopy.
+                excite_parts = []
+                if left >= 0.04:
+                    excite_parts.append(self.groups["visual_left"])
+                if right >= 0.04:
+                    excite_parts.append(self.groups["visual_right"])
+                excite = (np.concatenate(excite_parts) if excite_parts else
+                          np.empty(0, dtype=np.int32))
             self.brain.step(excite)
             spikes = self.brain.spikes
             # Descending neurons are real classifications. We do not know
@@ -191,7 +214,7 @@ def serve(mode: str, cache_dir: Path, checkpoint: Path, save_every: int = 300, m
                     raise ValueError("sequence must be a strictly increasing integer")
                 left = float(msg["left"])
                 right = float(msg["right"])
-                answer = adapter.step(seq, left, right)
+                answer = adapter.step(seq, left, right, msg.get("facets"))
                 previous_seq = seq
                 print(json.dumps(answer), flush=True)
                 if adapter.brain.steps % save_every == 0:
@@ -209,7 +232,7 @@ def main() -> None:
     parser.add_argument("--cache-dir", type=Path, default=Path("data/fafb783/processed"))
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--save-every", type=int, default=300)
-    parser.add_argument("--mapping", choices=("classified", "probes"), default="classified")
+    parser.add_argument("--mapping", choices=("classified", "probes", "retinotopic"), default="classified")
     args = parser.parse_args()
     if args.save_every < 1:
         parser.error("--save-every must be >= 1")
