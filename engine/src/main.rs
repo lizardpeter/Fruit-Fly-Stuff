@@ -25,6 +25,7 @@ use winit::{
 };
 
 use fruit_fly_engine::world::{MotorCommand, World};
+mod retina_gpu;
 mod eye;
 use eye::EyePass;
 use fruit_fly_engine::bridge::{Event as NeuralEvent, NeuralLink};

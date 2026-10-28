@@ -5,6 +5,7 @@ use ash::vk;
 use std::error::Error;
 use fruit_fly_engine::vision::{EyeCamera, VisionFrame};
 use fruit_fly_engine::retina::Retina;
+use crate::retina_gpu::GpuFacetSampler;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -53,6 +54,7 @@ pub struct EyePass {
     last_signals: (f32, f32),
     captured: u64,
     retina: Retina,
+    gpu_sampler: GpuFacetSampler,
     facet_values: Vec<f32>,
 }
 
@@ -65,7 +67,7 @@ impl EyePass {
         camera.validate()?;
         let (color, color_memory, color_view) = make_image(
             instance, device, physical, camera.width, camera.height, swapchain_format,
-            vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC,
+            vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC | vk::ImageUsageFlags::SAMPLED,
             vk::ImageAspectFlags::COLOR,
         )?;
         let (depth, depth_memory, depth_view) = make_image(
@@ -85,11 +87,13 @@ impl EyePass {
         let staging_memory = device.allocate_memory(&vk::MemoryAllocateInfo::default()
             .allocation_size(req.size).memory_type_index(kind), None)?;
         device.bind_buffer_memory(staging, staging_memory, 0)?;
+        let retina = Retina::new(camera.width, camera.height)?;
+        let gpu_sampler = GpuFacetSampler::new(instance, device, physical, color_view, &retina.facets)?;
         Ok(Self {
             camera, color, color_memory, color_view, depth, depth_memory,
             depth_view, staging, staging_memory, color_format: swapchain_format,
             ready: false, last_signals: (0.0, 0.0), captured: 0,
-            retina: Retina::new(camera.width, camera.height)?,
+            retina, gpu_sampler,
             facet_values: vec![0.0; fruit_fly_engine::retina::TOTAL_FACETS],
         })
     }
@@ -110,10 +114,11 @@ impl EyePass {
             for px in rgba.chunks_exact_mut(4) { px.swap(0, 2); }
         }
         let frame = VisionFrame::new(self.camera.width, self.camera.height, rgba)?;
-        // First working pass: GPU image readback -> 1442 hexagonal
-        // photoreceptor samplers -> adaptation dynamics. Sampling currently
-        // runs on CPU; the separate Vulkan compute stage is next.
-        let sample = self.retina.step(&frame, 1.0 / 60.0)?;
+        // Vulkan compute sampled the actual eye texture into 1442 optical
+        // RGB readings. CPU performs the tiny stateful biophysical-style
+        // receptor dynamics; the full RGB readback is only for snapshots.
+        let rgb = self.gpu_sampler.read_rgb(device)?;
+        let sample = self.retina.step_rgb_samples(&rgb, 1.0 / 60.0)?;
         self.last_signals = (
             sample.hemispheric_change[0],
             sample.hemispheric_change[1],
@@ -226,10 +231,12 @@ impl EyePass {
         device.cmd_pipeline_barrier(cb, vk::PipelineStageFlags::TRANSFER,
             vk::PipelineStageFlags::HOST, vk::DependencyFlags::empty(), &[],
             &buffer_barrier, &[]);
+        self.gpu_sampler.record(device, cb, self.color);
         self.ready = true;
     }
 
     pub unsafe fn destroy(self, device: &ash::Device) {
+        self.gpu_sampler.destroy(device);
         device.destroy_buffer(self.staging, None);
         device.free_memory(self.staging_memory, None);
         device.destroy_image_view(self.color_view, None);
