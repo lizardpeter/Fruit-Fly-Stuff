@@ -54,9 +54,10 @@ struct Request {
 
 /// Separate worker thread prevents Python + sparse matvec from blocking Vulkan.
 pub struct NeuralLink {
-    requests: SyncSender<Request>,
+    requests: Option<SyncSender<Request>>,
     events: Receiver<Event>,
     next_seq: u64,
+    worker: Option<thread::JoinHandle<()>>,
 }
 
 fn python_program(root: &Path) -> PathBuf {
@@ -128,7 +129,7 @@ impl NeuralLink {
             .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
         let (sender, requests) = mpsc::sync_channel::<Request>(1);
         let (events, receiver) = mpsc::channel::<Event>();
-        thread::spawn(move || {
+        let worker = thread::spawn(move || {
             let mut child = match spawn_python(&root, &mode) {
                 Ok(child) => child,
                 Err(error) => {
@@ -188,7 +189,7 @@ impl NeuralLink {
             drop(input);
             let _ = child.wait();
         });
-        Some(Self { requests: sender, events: receiver, next_seq: 0 })
+        Some(Self { requests: Some(sender), events: receiver, next_seq: 0, worker: Some(worker) })
     }
 
     /// Backpressure: drop extra control requests rather than queuing old sensory frames.
@@ -197,7 +198,7 @@ impl NeuralLink {
             seq: self.next_seq, left: left.clamp(0.0, 1.0),
             right: right.clamp(0.0, 1.0),
         };
-        if self.requests.try_send(packet).is_ok() {
+        if self.requests.as_ref().is_some_and(|tx| tx.try_send(packet).is_ok()) {
             self.next_seq += 1;
         }
     }
@@ -234,5 +235,18 @@ mod tests {
     fn malformed_motor_rejected() {
         let response = r#"{"type":"motor","version":1,"seq":1,"left":2,"right":0,"active":0}"#;
         assert!(event_from_reply(serde_json::from_str(response).unwrap()).is_err());
+    }
+}
+
+impl Drop for NeuralLink {
+    fn drop(&mut self) {
+        // Closing the sender lets the worker send the Python "close" command
+        // and wait for its checkpoint to hit disk before Rust exits.
+        self.requests.take();
+        if let Some(worker) = self.worker.take() {
+            if worker.join().is_err() {
+                eprintln!("Neural bridge worker panicked during shutdown");
+            }
+        }
     }
 }
