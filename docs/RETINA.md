@@ -92,3 +92,7 @@ The Vulkan workflow now enables `FRUIT_FLY_RETINA_VERIFY_GPU=1` for an actual 1,
 ### Deterministic visual-event experiment
 
 For a test of actual environmental input rather than an assumed neuron spike, set `FRUIT_FLY_VISION_TRIAL=1` and `FRUIT_FLY_SMOKE_FRAMES=240` in the Vulkan engine environment. The world briefly displays a white bar directly ahead of a stationary fly (time 0.75–1.50 s). The real GPU-rendered camera, Vulkan optical sampler and stateful photoreceptor model must generate both an ON transient when the object appears and an OFF transient when it disappears. GitHub Actions asserts both signals are present. This tests the conversion chain, **not** the biological correctness of its calibration or a fly behavior.
+
+### Display frame pacing (world-time regression)
+
+The engine now schedules redraws against the previous frame's time instead of calling `request_redraw` repeatedly in its idle callback. The old loop bypassed its 16 ms wait deadline and could render hundreds of frames in under a second, badly distorting the correspondence between CI frame counts and simulated visual events. The physical visual-event regression now also checks that simulation time has progressed far enough to show both transitions.

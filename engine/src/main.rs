@@ -720,11 +720,18 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // Approximately 60 Hz redraw requests without a busy-spin.
-        event_loop.set_control_flow(ControlFlow::WaitUntil(
-            Instant::now() + Duration::from_millis(16)
-        ));
-        if let Some(w) = self.window.as_ref() { w.request_redraw(); }
+        // Requesting redraw *every* about_to_wait bypasses WaitUntil and
+        // causes a busy-loop; 240 frames formerly advanced just 0.8 s!
+        // Schedule the next request relative to the previous rendered frame.
+        let deadline = self.frame_started + Duration::from_millis(16);
+        if Instant::now() >= deadline {
+            if let Some(window) = self.window.as_ref() {
+                window.request_redraw();
+            }
+            event_loop.set_control_flow(ControlFlow::Wait);
+        } else {
+            event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+        }
     }
 
     fn exiting(&mut self, _: &ActiveEventLoop) {
