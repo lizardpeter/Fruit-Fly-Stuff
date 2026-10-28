@@ -13,6 +13,7 @@ if not exist ".venv\Scripts\python.exe" (
 )
 ".venv\Scripts\python.exe" -m pip install -e . || goto :fail
 if /I "%MODE%"=="full" (
+  ".venv\Scripts\python.exe" -m fruit_fly_stuff.whole_brain download --annotations || goto :fail
   if not exist "data\fafb783\processed\metadata.json" (
     echo Preparing full FlyWire graph. This may require multiple GB of RAM.
     ".venv\Scripts\python.exe" -m fruit_fly_stuff.whole_brain download || goto :fail

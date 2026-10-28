@@ -69,6 +69,7 @@ jobs:
             ./engine/target/debug/fruit-fly-engine 2>&1 | tee "$RUNNER_TEMP/bridge-log.txt"
           grep -q "Neural bridge ready: toy with 4 neurons" "$RUNNER_TEMP/bridge-log.txt"
           grep -q "Neural step" "$RUNNER_TEMP/bridge-log.txt"
+          grep -Eq "Fly-eye GPU pixels captured=[1-9][0-9]*" "$RUNNER_TEMP/bridge-log.txt"
 
   windows-release:
     runs-on: windows-latest

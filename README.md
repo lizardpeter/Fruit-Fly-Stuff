@@ -6,7 +6,7 @@ An open-source project exploring **persistent, experience-dependent learning** i
 
 ## Experiment D — neural network controls the Vulkan fly (prototype)
 
-**[Link the 3D fly and neural network](docs/NEURAL_BRIDGE.md):** Rust and Python now exchange geometric landmark inputs and measured neuron spikes through a local JSON-lines bridge. Double-click `Run-Neural-Fly.cmd` (fast 4-neuron toy), or use `Run-Neural-Fly.cmd full` for the **entire FlyWire 139,255-neuron graph**. The full graph runs genuine sparse propagation but currently uses **artificial topological probes**, not identified biological sensory/motor circuits. The fly's own rendered eye-camera is **not yet connected**.
+**[Link the 3D fly and neural network](docs/NEURAL_BRIDGE.md):** Rust and Python now exchange geometric landmark inputs and measured neuron spikes through a local JSON-lines bridge. Double-click `Run-Neural-Fly.cmd` (fast 4-neuron toy), or use `Run-Neural-Fly.cmd full` for the **entire FlyWire 139,255-neuron graph**. The full graph runs genuine sparse propagation but currently uses **artificial topological probes**, not identified biological sensory/motor circuits. The fly now has a **real offscreen Vulkan eye camera**, whose pixels produce visual features. Full mode can use **FAFB v783 optic and descending neuron annotations**, but pixel-to-neuron and neural-to-motor mappings are still experimental.
 
 ## Experiment C — custom Rust + Vulkan 3D fly world
 

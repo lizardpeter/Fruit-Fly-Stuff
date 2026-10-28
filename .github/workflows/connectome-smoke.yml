@@ -25,7 +25,7 @@ jobs:
       - name: Install
         run: python -m pip install -e .
       - name: Download real FAFB v783 full neuron and unfiltered edge exports
-        run: python -m fruit_fly_stuff.whole_brain download --variant unfiltered
+        run: python -m fruit_fly_stuff.whole_brain download --variant unfiltered --annotations
       - name: Build all-neuron sparse connectivity cache
         run: python -m fruit_fly_stuff.whole_brain prepare --variant unfiltered
       - name: Assert complete real release imported
@@ -58,7 +58,7 @@ jobs:
           from fruit_fly_stuff.neural_bridge import BrainAdapter
           data=Path('data/fafb783/processed')
           checkpoint=Path('state/bridge-full-ci.npz')
-          bridge=BrainAdapter('full', data, checkpoint)
+          bridge=BrainAdapter('full', data, checkpoint, mapping='probes')
           print(bridge.hello())
           assert bridge.hello()['neurons']==139255
           step0=bridge.step(0, 1.0, 1.0)
@@ -68,7 +68,17 @@ jobs:
           assert step1['active'] > 0
           assert step1['left'] + step1['right'] >= 1, 'Artificial strong-edge probe should propagate activity'
           bridge.save()
-          restored=BrainAdapter('full', data, checkpoint)
+          restored=BrainAdapter('full', data, checkpoint, mapping='probes')
           assert restored.brain.steps==2
           print('Checkpoint restoration: PASS')
+          classified=BrainAdapter('full', data, Path('state/bridge-classified-ci.npz'), mapping='classified')
+          hello=classified.hello()
+          print('Classified sensor/motor groups:', hello['anatomical_groups'])
+          assert hello['anatomical_groups']['counts']['visual_left'] > 0
+          assert hello['anatomical_groups']['counts']['visual_right'] > 0
+          assert hello['anatomical_groups']['counts']['descending_left'] > 0
+          assert hello['anatomical_groups']['counts']['descending_right'] > 0
+          response=classified.step(1,1.0,0.0)
+          print('Classified-mode neural response:', response)
+          classified.save()
           PY
