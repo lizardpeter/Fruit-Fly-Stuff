@@ -73,6 +73,16 @@ fn python_program(root: &Path) -> PathBuf {
     PathBuf::from(if cfg!(windows) { "python" } else { "python3" })
 }
 
+/// A new retinal geometry must never silently resume old geometric input
+/// state. Retain the old .npz file, start a new v2 file for retinotopic mode.
+fn checkpoint_filename(mode: &str, mapping: &str) -> String {
+    match (mode, mapping) {
+        ("full", "retinotopic") => "bridge-full-retinotopic-v2.npz".into(),
+        ("full", mapping) => format!("bridge-full-{mapping}.npz"),
+        _ => "bridge-toy.npz".into(),
+    }
+}
+
 fn spawn_python(root: &Path, mode: &str) -> std::io::Result<Child> {
     let mapping = env::var("FRUIT_FLY_NEURAL_MAPPING")
         .unwrap_or_else(|_| "classified".to_owned());
@@ -80,9 +90,7 @@ fn spawn_python(root: &Path, mode: &str) -> std::io::Result<Child> {
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput,
             "invalid FRUIT_FLY_NEURAL_MAPPING value"));
     }
-    let checkpoint = if mode == "full" {
-        format!("bridge-full-{mapping}.npz")
-    } else { "bridge-toy.npz".to_owned() };
+    let checkpoint = checkpoint_filename(mode, &mapping);
     Command::new(python_program(root))
         .arg("-u").arg("-m").arg("fruit_fly_stuff.neural_bridge")
         .arg("--mode").arg(mode)
@@ -252,6 +260,16 @@ mod tests {
             }
             _ => panic!("expected motor"),
         };
+    }
+
+    #[test]
+    fn retina_v2_checkpoint_namespace_preserves_old_state() {
+        assert_eq!(checkpoint_filename("full", "retinotopic"),
+                   "bridge-full-retinotopic-v2.npz");
+        assert_eq!(checkpoint_filename("full", "classified"),
+                   "bridge-full-classified.npz");
+        assert_eq!(checkpoint_filename("toy", "classified"),
+                   "bridge-toy.npz");
     }
 
     #[test]
