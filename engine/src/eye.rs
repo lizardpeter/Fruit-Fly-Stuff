@@ -4,7 +4,7 @@
 use ash::vk;
 use std::error::Error;
 use fruit_fly_engine::vision::{EyeCamera, VisionFrame};
-use fruit_fly_engine::retina::Retina;
+use fruit_fly_engine::retina::{Retina, reference_rgb_samples};
 use crate::retina_gpu::GpuFacetSampler;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -103,23 +103,45 @@ impl EyePass {
     /// Call only after waiting on the previous frame's submission fence.
     pub unsafe fn collect(&mut self, device: &ash::Device, delta_seconds: f32) -> Result<()> {
         if !self.ready { return Ok(()); }
-        let bytes = (self.camera.width as usize) * (self.camera.height as usize) * 4;
-        let ptr = device.map_memory(self.staging_memory, 0, bytes as u64,
-            vk::MemoryMapFlags::empty())? as *const u8;
-        let pixels = std::slice::from_raw_parts(ptr, bytes).to_vec();
-        device.unmap_memory(self.staging_memory);
-        // Most swapchains are BGRA; the encoder explicitly handles format order.
-        let is_bgra = matches!(self.color_format,
-            vk::Format::B8G8R8A8_UNORM | vk::Format::B8G8R8A8_SRGB);
-        let mut rgba = pixels;
-        if is_bgra {
-            for px in rgba.chunks_exact_mut(4) { px.swap(0, 2); }
-        }
-        let frame = VisionFrame::new(self.camera.width, self.camera.height, rgba)?;
-        // Vulkan compute sampled the actual eye texture into 1442 optical
-        // RGB readings. CPU performs the tiny stateful biophysical-style
-        // receptor dynamics; the full RGB readback is only for snapshots.
+        // The shader produces only 1,442 RGB samples. Do NOT copy the full
+        // 128x96 image to the CPU unless a screenshot or parity test needs it.
         let rgb = self.gpu_sampler.read_rgb(device)?;
+        let screenshot_path = std::env::var("FRUIT_FLY_EYE_SNAPSHOT").ok();
+        let snapshot = screenshot_path.is_some() && self.captured % 120 == 0;
+        let parity = std::env::var_os("FRUIT_FLY_RETINA_VERIFY_GPU").is_some()
+            && self.captured == 0;
+        if snapshot || parity {
+            let bytes = (self.camera.width as usize) * (self.camera.height as usize) * 4;
+            let ptr = device.map_memory(self.staging_memory, 0, bytes as u64,
+                vk::MemoryMapFlags::empty())? as *const u8;
+            let mut rgba = std::slice::from_raw_parts(ptr, bytes).to_vec();
+            device.unmap_memory(self.staging_memory);
+            let is_bgra = matches!(self.color_format,
+                vk::Format::B8G8R8A8_UNORM | vk::Format::B8G8R8A8_SRGB);
+            let srgb = matches!(self.color_format,
+                vk::Format::B8G8R8A8_SRGB | vk::Format::R8G8B8A8_SRGB);
+            if is_bgra {
+                for px in rgba.chunks_exact_mut(4) { px.swap(0, 2); }
+            }
+            let frame = VisionFrame::new(self.camera.width, self.camera.height, rgba)?;
+            if parity {
+                let reference = reference_rgb_samples(&frame, &self.retina.facets, srgb);
+                let max_abs_error = reference.iter().zip(&rgb)
+                    .flat_map(|(a, b)| a.iter().zip(b).map(|(x, y)| (x - y).abs()))
+                    .fold(0.0_f32, f32::max);
+                // Expect a few quantization bits of tolerance for UNORM/sRGB
+                // conversion on different drivers, but not gross mismatches.
+                if !max_abs_error.is_finite() || max_abs_error > 0.012 {
+                    return Err(format!("Vulkan retina GPU/CPU parity failed: max_abs_error={max_abs_error:.5}").into());
+                }
+                println!("Retina GPU/CPU parity PASS: max_abs_error={max_abs_error:.5}");
+            }
+            if let Some(path) = screenshot_path.filter(|_| snapshot) {
+                if let Err(error) = frame.save_bmp(std::path::Path::new(&path)) {
+                    eprintln!("Fly-eye snapshot failed: {error}");
+                }
+            }
+        }
         if delta_seconds > 0.0 {
             // The retina runs on *world* time rather than assumed 60 Hz.
             // Pausing the world also pauses retinal adaptation.
@@ -133,15 +155,6 @@ impl EyePass {
             }
             for (dest, off) in self.facet_off_values.iter_mut().zip(sample.off_contrast.iter()) {
                 *dest = (off * 5.0).clamp(0.0, 1.0);
-            }
-        }
-        // Optional snapshot of the fly's OWN view, not the human observer's.
-        // Every ~120 frames; no disk I/O unless explicitly configured.
-        if self.captured % 120 == 0 {
-            if let Ok(path) = std::env::var("FRUIT_FLY_EYE_SNAPSHOT") {
-                if let Err(error) = frame.save_bmp(std::path::Path::new(&path)) {
-                    eprintln!("Fly-eye snapshot failed: {error}");
-                }
             }
         }
         self.captured += 1;

@@ -84,3 +84,7 @@ The photoreceptor response now advances using elapsed world-simulation time, not
 ### Checkpoint compatibility and neural persistence
 
 Full-brain checkpoints are now separated by mapping mode: `state/bridge-full-classified.npz`, `state/bridge-full-probes.npz`, and `state/bridge-full-retinotopic.npz`. The checkpoint also records a fingerprint of the graph, mapping mode, source classification data, and retina manifest. A different visual calibration fails restoration rather than silently reusing incompatible neural state. Earlier standalone whole-brain checkpoints remain compatible with the standalone simulator, but old bridge checkpoint filenames are not automatically migrated.
+
+### Optical GPU/CPU correctness and dark scenes
+
+The Vulkan workflow now enables `FRUIT_FLY_RETINA_VERIFY_GPU=1` for an actual 1,442-facet shader-versus-CPU numerical comparison on the first rendered frame. The CPU reference decodes sRGB when the offscreen render target has an sRGB format. Any discrepancy above 0.012 causes a failing runtime test. A fully black image is valid; the previous non-black requirement has been removed. Full-image CPU readback is performed only for explicit eye snapshots or the parity test; ordinary sensory updates use the small Vulkan compute-buffer readback. This test checks software consistency, **not biological accuracy**.

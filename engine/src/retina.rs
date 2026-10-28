@@ -95,7 +95,14 @@ pub fn spectral_proxy(rgb: [f32; 3], pale: bool) -> [f32; RECEPTORS_PER_FACET] {
     [broadband, broadband, broadband, broadband, broadband, broadband, 0.0, inner]
 }
 
-fn sample_rgb(frame: &VisionFrame, facet: Facet) -> [f32; 3] {
+/// sRGB textures are decoded to linear RGB automatically by textureLoad;
+/// an ordinary UNORM texture preserves encoded bytes. Match GPU semantics.
+fn decode_srgb(encoded: f32) -> f32 {
+    if encoded <= 0.04045 { encoded / 12.92 }
+    else { ((encoded + 0.055) / 1.055).powf(2.4) }
+}
+
+fn sample_rgb(frame: &VisionFrame, facet: Facet, srgb: bool) -> [f32; 3] {
     let mut sum = [0.0; 3];
     let mut weight_sum = 0.0;
     // Nine weighted pixels: approximate angular acceptance around one facet.
@@ -109,10 +116,22 @@ fn sample_rgb(frame: &VisionFrame, facet: Facet) -> [f32; 3] {
         let y = (facet.pixel_y.round() as i32 + dy)
             .clamp(0, frame.height as i32 - 1) as usize;
         let ix = (y * frame.width as usize + x) * 4;
-        for c in 0..3 { sum[c] += frame.rgba8[ix + c] as f32 / 255.0 * w; }
+        for c in 0..3 {
+            let normalized = frame.rgba8[ix + c] as f32 / 255.0;
+            sum[c] += (if srgb { decode_srgb(normalized) } else { normalized }) * w;
+        }
         weight_sum += w;
     }
     sum.map(|x| x / weight_sum)
+}
+
+/// CPU optical reference for validating the *actual GPU shader* against
+/// GPU-rendered and copied pixels. The per-facet hex coordinates and 3x3
+/// weights are shared with the shader. Input is already RGBA channel order.
+pub fn reference_rgb_samples(
+    image: &VisionFrame, facets: &[Facet], srgb: bool,
+) -> Vec<[f32; 3]> {
+    facets.iter().copied().map(|f| sample_rgb(image, f, srgb)).collect()
 }
 
 pub struct Retina {
@@ -141,7 +160,7 @@ impl Retina {
             return Err("retina frame dimensions invalid");
         }
         let inputs: Vec<[f32; 3]> = self.facets.iter().copied()
-            .map(|facet| sample_rgb(image, facet)).collect();
+            .map(|facet| sample_rgb(image, facet, false)).collect();
         self.step_rgb_samples(&inputs, dt_seconds)
     }
 
@@ -258,7 +277,7 @@ mod tests {
         let frame = image([220,50,20,255], [20,60,220,255]);
         let mut from_pixels = Retina::new(128,96).unwrap();
         let mut from_facets = Retina::new(128,96).unwrap();
-        let rgb = from_facets.facets.iter().copied().map(|f| sample_rgb(&frame,f)).collect::<Vec<_>>();
+        let rgb = from_facets.facets.iter().copied().map(|f| sample_rgb(&frame,f,false)).collect::<Vec<_>>();
         let a = from_pixels.step(&frame,0.016).unwrap();
         let b = from_facets.step_rgb_samples(&rgb,0.016).unwrap();
         assert_eq!(a.graded, b.graded);
@@ -278,6 +297,27 @@ mod tests {
         assert!(onset.graded[0][0] > 0.05);
         assert!(onset.off_contrast[0] < 0.001);
     }
+    #[test]
+    fn srgb_cpu_reference_matches_texture_load_decode() {
+        let frame = image([128, 128, 128, 255], [128, 128, 128, 255]);
+        let facets = hex_facets(128, 96).unwrap();
+        let unorm = reference_rgb_samples(&frame, &facets, false);
+        let srgb = reference_rgb_samples(&frame, &facets, true);
+        assert_eq!(unorm.len(), TOTAL_FACETS);
+        assert!((unorm[0][0] - 128.0/255.0).abs() < 0.0001);
+        assert!((srgb[0][0] - 0.21586).abs() < 0.0002);
+        assert!(srgb.iter().all(|s| (s[0] - srgb[0][0]).abs() < 1e-6));
+    }
+
+    #[test]
+    fn optical_reference_accepts_black_frames() {
+        let frame = image([0, 0, 0, 255], [0, 0, 0, 255]);
+        let mut retina = Retina::new(128, 96).unwrap();
+        let rgb = reference_rgb_samples(&frame, &retina.facets, true);
+        assert!(rgb.iter().all(|r| r == &[0.0; 3]));
+        assert!(retina.step_rgb_samples(&rgb, 0.016).is_ok());
+    }
+
     #[test]
     fn rejects_invalid_resolution_and_time() {
         assert!(Retina::new(127, 96).is_err());
