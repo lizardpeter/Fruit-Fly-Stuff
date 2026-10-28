@@ -2,7 +2,8 @@ struct Draw {
     mvp: mat4x4<f32>,
     color: vec4<f32>,
 };
-var<push_constant> draw: Draw;
+@group(0) @binding(0)
+var<storage, read> instances: array<Draw>;
 
 struct VsOut {
     @builtin(position) clip: vec4<f32>,
@@ -10,7 +11,7 @@ struct VsOut {
 };
 
 @vertex
-fn vs_main(@builtin(vertex_index) vertex: u32) -> VsOut {
+fn vs_main(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VsOut {
     // Unit cube expanded from 12 triangles; geometry generated on the GPU.
     let corners = array<vec3<f32>, 8>(
         vec3<f32>(-0.5, -0.5, -0.5),
@@ -30,6 +31,7 @@ fn vs_main(@builtin(vertex_index) vertex: u32) -> VsOut {
         3u, 7u, 6u, 3u, 6u, 2u,
         0u, 1u, 5u, 0u, 5u, 4u
     );
+    let draw = instances[instance];
     let face = vertex / 6u;
     let shade = array<f32, 6>(1.0, 0.68, 0.79, 0.89, 1.1, 0.62);
     var out: VsOut;
