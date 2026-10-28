@@ -71,3 +71,7 @@ The CI verifies compiling and tests on Windows/Linux, but GitHub-hosted runners 
 ## Viewing the fly-eye camera
 
 When launched with `Run-Neural-Fly.cmd`, real GPU fly-camera pixels are also saved periodically to `results/fly-eye.bmp` (BMP, 128×96 pixels). This comes from an independent offscreen Vulkan render pass rather than the human spectator camera. The filename can be overridden with the `FRUIT_FLY_EYE_SNAPSHOT` environment variable. The integration workflow tests the output and attaches one BMP image as a downloadable GitHub Actions artifact.
+
+### Vulkan compute optical sampler
+
+The renderer now compiles a real WGSL compute shader to SPIR-V and dispatches it over the fly-eye offscreen texture each frame. Each of 1,442 facet invocations averages a nine-pixel optical neighborhood on the GPU; a small readback supplies the CPU's receptor kinetics. The full-brain spiking network remains on Python/CPU. GPU geometry plus photoreceptor sampling is **not** a calibrated retina, and no speedup is claimed without measurements.

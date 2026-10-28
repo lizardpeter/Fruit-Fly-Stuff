@@ -5,3 +5,5 @@ pub mod vision;
 pub mod world;
 
 pub mod bridge;
+
+pub mod retina;

@@ -25,6 +25,7 @@ use winit::{
 };
 
 use fruit_fly_engine::world::{MotorCommand, World};
+mod retina_gpu;
 mod eye;
 use eye::EyePass;
 use fruit_fly_engine::bridge::{Event as NeuralEvent, NeuralLink};
@@ -98,7 +99,8 @@ impl Renderer {
                         let present = surface_loader.get_physical_device_surface_support(
                             physical, i as u32, surface
                         ).ok()?;
-                        if q.queue_flags.contains(vk::QueueFlags::GRAPHICS) && present {
+                        if q.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+                            && q.queue_flags.contains(vk::QueueFlags::COMPUTE) && present {
                             Some((physical, i as u32))
                         } else { None }
                     })
@@ -334,6 +336,10 @@ impl Renderer {
 
     fn visual_signals(&self) -> (f32, f32) {
         self.eye.as_ref().map_or((0.0, 0.0), EyePass::signals)
+    }
+
+    fn facet_signals(&self) -> &[f32] {
+        self.eye.as_ref().map_or(&[], EyePass::facet_signals)
     }
 
     fn captured_eye_frames(&self) -> u64 {
@@ -637,7 +643,9 @@ impl ApplicationHandler for App {
                         // render pass and actual copied pixels, not geometry.
                         let (left, right) = self.renderer.as_ref()
                             .map_or((0.0, 0.0), Renderer::visual_signals);
-                        link.send_senses(left, right);
+                        let facets = self.renderer.as_ref()
+                            .map_or(&[][..], Renderer::facet_signals);
+                        link.send_senses(left, right, facets);
                     }
                 }
                 let motor = if self.autopilot {

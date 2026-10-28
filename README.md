@@ -4,6 +4,10 @@ An open-source project exploring **persistent, experience-dependent learning** i
 
 > **Prototype status:** This version implements a **synthetic three-neuron circuit**, not the full fruit fly brain. It validates spiking dynamics, reward-driven learning, and persistent memory before we attempt biological reconstruction.
 
+## Experiment E — Retina-to-Connectome Compiler (experimental)
+
+[Read the retinal modeling guide](docs/RETINA.md). The Rust fly now generates 721 hex facets per projected eye half, samples photoreceptor-like graded responses and adaptation, and transmits 1,442 facet responses to Python. A versioned FAFB v783 compiler can map the corresponding virtual facets to **real, column-assigned L1/L2 neuron IDs**, but the virtual-to-biological hex alignment is uncalibrated. Use `Run-Retina-Fly-Approximate.cmd` on Windows to opt into the clearly marked approximate model. Ordinary RGB does not measure UV; the R7 UV channel is not fabricated.
+
 ## Experiment D — neural network controls the Vulkan fly (prototype)
 
 **[Link the 3D fly and neural network](docs/NEURAL_BRIDGE.md):** Rust and Python now exchange geometric landmark inputs and measured neuron spikes through a local JSON-lines bridge. Double-click `Run-Neural-Fly.cmd` (fast 4-neuron toy), or use `Run-Neural-Fly.cmd full` for the **entire FlyWire 139,255-neuron graph**. The full graph runs genuine sparse propagation but currently uses **artificial topological probes**, not identified biological sensory/motor circuits. The fly now has a **real offscreen Vulkan eye camera**, whose pixels produce visual features. Full mode can use **FAFB v783 optic and descending neuron annotations**, but pixel-to-neuron and neural-to-motor mappings are still experimental.

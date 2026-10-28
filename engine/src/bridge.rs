@@ -23,6 +23,7 @@ struct Step {
     seq: u64,
     left: f32,
     right: f32,
+    facets: Vec<f32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -45,11 +46,12 @@ pub enum Event {
     Fault(String),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Request {
     seq: u64,
     left: f32,
     right: f32,
+    facets: Vec<f32>,
 }
 
 /// Separate worker thread prevents Python + sparse matvec from blocking Vulkan.
@@ -73,6 +75,8 @@ fn spawn_python(root: &Path, mode: &str) -> std::io::Result<Child> {
     Command::new(python_program(root))
         .arg("-u").arg("-m").arg("fruit_fly_stuff.neural_bridge")
         .arg("--mode").arg(mode)
+        .arg("--mapping")
+        .arg(env::var("FRUIT_FLY_NEURAL_MAPPING").unwrap_or_else(|_| "classified".to_owned()))
         .arg("--cache-dir").arg(root.join("data").join("fafb783").join("processed"))
         .arg("--checkpoint").arg(root.join("state").join(format!("bridge-{mode}.npz")))
         .current_dir(root)
@@ -166,6 +170,7 @@ impl NeuralLink {
                 let msg = Step {
                     kind: "step", version: VERSION, seq: request.seq,
                     left: request.left, right: request.right,
+                    facets: request.facets,
                 };
                 let transaction = serde_json::to_writer(&mut input, &msg)
                     .map_err(|e| e.to_string())
@@ -193,10 +198,11 @@ impl NeuralLink {
     }
 
     /// Backpressure: drop extra control requests rather than queuing old sensory frames.
-    pub fn send_senses(&mut self, left: f32, right: f32) {
+    pub fn send_senses(&mut self, left: f32, right: f32, facets: &[f32]) {
         let packet = Request {
             seq: self.next_seq, left: left.clamp(0.0, 1.0),
             right: right.clamp(0.0, 1.0),
+            facets: facets.iter().map(|x| x.clamp(0.0, 1.0)).collect(),
         };
         if self.requests.as_ref().is_some_and(|tx| tx.try_send(packet).is_ok()) {
             self.next_seq += 1;

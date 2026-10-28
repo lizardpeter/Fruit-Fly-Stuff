@@ -22,4 +22,21 @@ fn main() {
         let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
         fs::write(dest.join(file), bytes).expect("save SPIR-V");
     }
+
+    println!("cargo:rerun-if-changed=shaders/retina.wgsl");
+    let src = fs::read_to_string("shaders/retina.wgsl").expect("read retina compute shader");
+    let module = naga::front::wgsl::parse_str(&src).expect("parse retina compute WGSL");
+    let info = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(), naga::valid::Capabilities::empty(),
+    ).validate(&module).expect("validate retina shader");
+    let words = naga::back::spv::write_vec(
+        &module, &info, &naga::back::spv::Options::default(),
+        Some(&naga::back::spv::PipelineOptions {
+            entry_point: "sample_facets".to_owned(),
+            shader_stage: naga::ShaderStage::Compute,
+        }),
+    ).expect("compile retina SPIR-V");
+    fs::write(dest.join("retina.comp.spv"),
+        words.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>())
+        .expect("save retina SPIR-V");
 }
