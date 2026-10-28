@@ -52,6 +52,18 @@ jobs:
             VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
             FRUIT_FLY_SMOKE_FRAMES=5 \
             ./engine/target/debug/fruit-fly-engine
+      - name: Exercise Vulkan-to-Python closed-loop neural bridge
+        run: |
+          timeout 90s xvfb-run -a env \
+            VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
+            FRUIT_FLY_SMOKE_FRAMES=240 \
+            FRUIT_FLY_BRAIN_MODE=toy \
+            FRUIT_FLY_PYTHON=python3 \
+            FRUIT_FLY_ROOT="$GITHUB_WORKSPACE" \
+            PYTHONPATH="$GITHUB_WORKSPACE/src" \
+            ./engine/target/debug/fruit-fly-engine 2>&1 | tee "$RUNNER_TEMP/bridge-log.txt"
+          grep -q "Neural bridge ready: toy with 4 neurons" "$RUNNER_TEMP/bridge-log.txt"
+          grep -q "Neural step" "$RUNNER_TEMP/bridge-log.txt"
 
   windows-release:
     runs-on: windows-latest

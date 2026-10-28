@@ -25,6 +25,7 @@ use winit::{
 };
 
 use fruit_fly_engine::world::{MotorCommand, World};
+use fruit_fly_engine::bridge::{Event as NeuralEvent, NeuralLink};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -489,6 +490,11 @@ struct App {
     camera_orbit: f32,
     autopilot: bool,
     frame_started: Instant,
+    neural: Option<NeuralLink>,
+    neural_ready: bool,
+    neural_motor: MotorCommand,
+    neural_age: f32,
+    neural_clock: f32,
     rendered_frames: u32,
     smoke_frames: Option<u32>,
 }
@@ -498,6 +504,11 @@ impl Default for App {
             window: None, renderer: None, world: World::default(),
             keys: HashSet::new(), camera_orbit: 0.6,
             autopilot: true, frame_started: Instant::now(),
+            neural: NeuralLink::from_environment(),
+            neural_ready: false,
+            neural_motor: MotorCommand::default(),
+            neural_age: 99.0,
+            neural_clock: 0.0,
             rendered_frames: 0,
             smoke_frames: std::env::var("FRUIT_FLY_SMOKE_FRAMES")
                 .ok().and_then(|n| n.parse::<u32>().ok()).filter(|&n| n > 0),
@@ -517,7 +528,12 @@ impl ApplicationHandler for App {
                 let window = Arc::new(window);
                 match Renderer::new(&window) {
                     Ok(renderer) => {
-                        println!("Vulkan 1.3 renderer ready. WASD: fly; arrows: camera; P: autopilot; Space: pause; Esc: quit");
+                        println!("Vulkan 1.3 renderer ready. WASD: fly; arrows: camera; P: controller toggle; Space: pause; Esc: quit");
+                        if self.neural.is_some() {
+                            println!("Neural bridge configured; waiting for the Python worker.");
+                        } else {
+                            println!("No neural bridge configured; using scripted demo autopilot.");
+                        }
                         self.renderer = Some(renderer);
                         self.window = Some(window);
                         self.frame_started = Instant::now();
@@ -544,7 +560,12 @@ impl ApplicationHandler for App {
                         match code {
                             KeyCode::Escape => event_loop.exit(),
                             KeyCode::Space => self.world.paused = !self.world.paused,
-                            KeyCode::KeyP => self.autopilot = !self.autopilot,
+                            KeyCode::KeyP => {
+                                self.autopilot = !self.autopilot;
+                                println!("Controller: {}", if !self.autopilot { "keyboard" }
+                                    else if self.neural.is_some() { "experimental neural" }
+                                    else { "scripted autopilot" });
+                            },
                             _ => {}
                         }
                     }
@@ -559,11 +580,49 @@ impl ApplicationHandler for App {
                     - self.keys.contains(&KeyCode::KeyS) as i32) as f32;
                 let turn = (self.keys.contains(&KeyCode::KeyD) as i32
                     - self.keys.contains(&KeyCode::KeyA) as i32) as f32;
+                self.neural_age += dt;
+                if let Some(link) = self.neural.as_mut() {
+                    while let Some(event) = link.poll() {
+                        match event {
+                            NeuralEvent::Ready { mode, neurons, edges } => {
+                                self.neural_ready = true;
+                                println!("Neural bridge ready: {mode} with {neurons} neurons, {edges} connections");
+                            },
+                            NeuralEvent::Motor { command, active, seq } => {
+                                self.neural_motor = command;
+                                self.neural_age = 0.0;
+                                if seq % 60 == 0 {
+                                    println!("Neural step {seq}: {active} firing cells, motor={command:?}");
+                                }
+                            },
+                            NeuralEvent::Fault(message) => {
+                                eprintln!("Neural bridge failed: {message}");
+                                self.neural_ready = false;
+                                self.neural_motor = MotorCommand::default();
+                            },
+                        }
+                    }
+                    // Fixed neural control cadence, separate from Vulkan rendering FPS.
+                    self.neural_clock += dt;
+                    if self.autopilot && !self.world.paused && self.neural_ready
+                        && self.neural_clock >= 1.0 / 30.0 {
+                        self.neural_clock -= 1.0 / 30.0;
+                        let (left, right) = self.world.landmark_senses();
+                        link.send_senses(left, right);
+                    }
+                }
                 let motor = if self.autopilot {
-                    // Temporary, explicitly scripted behavior until neural motor
-                    // outputs are connected and tested against controls.
-                    MotorCommand {forward: 0.18, turn: (self.world.time * 0.28).sin() * 0.35}
-                } else { MotorCommand {forward: direction, turn} };
+                    if self.neural.is_some() {
+                        if self.neural_ready && self.neural_age < 0.3 {
+                            self.neural_motor
+                        } else { MotorCommand::default() }
+                    } else {
+                        // Scripted movement only if no neural worker was requested.
+                        MotorCommand {forward: 0.18, turn: (self.world.time * 0.28).sin() * 0.35}
+                    }
+                } else {
+                    MotorCommand {forward: direction, turn}
+                };
                 self.world.step(dt, motor);
                 if let Some(renderer) = self.renderer.as_mut() {
                     if let Err(err) = renderer.draw(&self.world, self.camera_orbit) {

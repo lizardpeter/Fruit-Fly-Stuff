@@ -60,6 +60,29 @@ impl World {
         self.time += dt;
     }
 
+    /// Visual *proxy*, not rendered pixels or biological compound-eye input.
+    /// Two landmark-bearing signals in fly-local coordinates, each in [0,1].
+    /// Replace this with offscreen vision + a documented neuron mapping later.
+    pub fn landmark_senses(&self) -> (f32, f32) {
+        let forward = Vec3::new(self.fly.heading.sin(), 0.0, self.fly.heading.cos());
+        let rightward = Vec3::new(self.fly.heading.cos(), 0.0, -self.fly.heading.sin());
+        let mut left = 0.0_f32;
+        let mut right = 0.0_f32;
+        for target in [Vec3::new(2.2, 0.65, 2.0), Vec3::new(-2.2, 0.65, -1.6)] {
+            let delta = target - self.fly.position;
+            let distance = delta.length();
+            if distance < 0.05 { continue; }
+            let ray = delta / distance;
+            let ahead = forward.dot(ray);
+            if ahead <= 0.0 { continue; }
+            let side = rightward.dot(ray);
+            let strength = (ahead * side.abs() / (1.0 + 0.20 * distance)).clamp(0.0, 1.0);
+            if side > 0.0 { right = right.max(strength); }
+            else { left = left.max(strength); }
+        }
+        (left, right)
+    }
+
     pub fn objects(&self) -> Vec<Object> {
         let mut o = Vec::with_capacity(64);
         // The world is a broad green floor with a few unmistakable markers.
@@ -114,6 +137,15 @@ mod tests {
         let mut w=World{paused:true,..World::default()};
         w.step(1.0,MotorCommand{forward:1.0,turn:0.0});
         assert_eq!(w.time,0.0);
+    }
+    #[test]
+    fn left_and_right_sensors_follow_heading() {
+        let mut w = World::default();
+        let (_left, right) = w.landmark_senses();
+        assert!(right > 0.0);
+        w.fly.heading = std::f32::consts::FRAC_PI_2;
+        let (left, _right) = w.landmark_senses();
+        assert!(left > 0.0);
     }
     #[test]
     fn scene_contains_body_and_landmarks() {

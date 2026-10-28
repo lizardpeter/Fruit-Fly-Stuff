@@ -2,6 +2,10 @@
 
 A minimal original 3D engine, not a wrapper around an existing game engine.
 
+## Neural bridge (Milestone 2)
+
+The Vulkan engine optionally receives neural motor commands from a local Python process and sends landmark-bearing proxies to it. See [Neural Bridge](../docs/NEURAL_BRIDGE.md) and run `Run-Neural-Fly.cmd` (toy) or `Run-Neural-Fly.cmd full`. **This does not capture camera pixels or replicate biologically correct sensory/motor mappings.** Scripted and keyboard modes remain when the bridge is disabled.
+
 ## Current implementation (Milestone 1)
 
 - **Rust** game loop/world/scene update; low-level **Vulkan 1.3** renderer using `ash`.
