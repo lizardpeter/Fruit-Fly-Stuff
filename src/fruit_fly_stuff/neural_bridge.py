@@ -126,9 +126,9 @@ class BrainAdapter:
             # Anatomically assigned *broad classes*, experimental encoding:
             # strong camera signal drives up to 256 optic-lobe neurons by side.
             excite_parts = []
-            if left >= 0.08:
+            if left >= 0.04:
                 excite_parts.append(self.groups["visual_left"])
-            if right >= 0.08:
+            if right >= 0.04:
                 excite_parts.append(self.groups["visual_right"])
             excite = (np.concatenate(excite_parts) if excite_parts else
                       np.empty(0, dtype=np.int32))
@@ -141,7 +141,7 @@ class BrainAdapter:
         else:
             excite = np.array([idx for input_value, (idx, _) in
                                [(left, self.left), (right, self.right)]
-                               if input_value >= 0.08], dtype=np.int32)
+                               if input_value >= 0.04], dtype=np.int32)
             if self.mode == "toy":
                 drive = np.zeros(4, dtype=np.float64)
                 drive[excite] = 1.2

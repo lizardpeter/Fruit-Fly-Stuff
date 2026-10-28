@@ -64,3 +64,12 @@ def test_bad_sensor_range_rejected(tmp_path):
     b = BrainAdapter("toy", tmp_path, tmp_path / "memory.npz")
     with pytest.raises(ValueError):
         b.step(1, -1.0, 0.0)
+
+
+def test_weak_rendered_visual_feature_drives_toy_neurons(tmp_path):
+    brain = BrainAdapter("toy", tmp_path, tmp_path / "vision.npz")
+    first = brain.step(0, 0.062, 0.0)
+    second = brain.step(1, 0.0, 0.0)
+    assert first["left"] == 0
+    assert second["left"] == 1
+    assert second["right"] == 0
