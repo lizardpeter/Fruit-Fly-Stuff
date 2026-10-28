@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from scipy.sparse import csr_matrix
 
-from fruit_fly_stuff.neural_bridge import BrainAdapter, serve, strongest_disjoint_edges
+from fruit_fly_stuff.neural_bridge import BrainAdapter, serve, strongest_disjoint_edges, route_visual_channels
 
 
 def test_toy_sensor_spikes_drive_motor_after_one_step(tmp_path):
@@ -73,3 +73,43 @@ def test_weak_rendered_visual_feature_drives_toy_neurons(tmp_path):
     assert first["left"] == 0
     assert second["left"] == 1
     assert second["right"] == 0
+
+
+def test_retina_on_off_pathway_routing_is_type_specific():
+    neuron_ids = np.array([12, 23, 34, 45], dtype=np.int32)
+    facets = np.array([5, 5, 730, 730], dtype=np.int32)
+    kinds = np.array(["L1", "L2", "L1", "L2"])
+    on = np.zeros(1442, dtype=np.float32)
+    off = np.zeros(1442, dtype=np.float32)
+    on[5], off[730] = 0.8, 0.9
+    result = route_visual_channels(neuron_ids, facets, kinds, on, off)
+    assert result.tolist() == [12, 45]
+    on[5], off[730] = 0.0, 0.0
+    assert route_visual_channels(neuron_ids, facets, kinds, on, off).size == 0
+
+
+@pytest.mark.parametrize("invalid", [
+    [0.0] * 1441, [0.0] * 1442 + [0.1],
+    [-1.0] + [0.0] * 1441, [float("nan")] + [0.0] * 1441,
+])
+def test_retina_rejects_incorrect_or_nonfinite_signals(invalid):
+    with pytest.raises(ValueError):
+        route_visual_channels(
+            np.array([2]), np.array([0]), np.array(["L1"]),
+            invalid, np.zeros(1442, dtype=np.float32),
+        )
+
+
+def test_retina_requires_both_polarities_and_supported_cell_types():
+    retina = np.zeros(1442, dtype=np.float32)
+    with pytest.raises(ValueError, match="both ON and OFF"):
+        route_visual_channels([1], [1], ["L1"], retina, None)
+    with pytest.raises(ValueError, match="only mapped L1 and L2"):
+        route_visual_channels([1], [1], ["T4a"], retina, retina)
+
+
+def test_l2_off_channel_independent_of_l1_on():
+    on = np.zeros(1442, dtype=np.float32)
+    off = np.zeros(1442, dtype=np.float32)
+    off[12] = 0.6
+    assert route_visual_channels([9, 10], [12, 12], ["L1", "L2"], on, off).tolist() == [10]

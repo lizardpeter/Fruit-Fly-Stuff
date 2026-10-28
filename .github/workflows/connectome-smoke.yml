@@ -97,12 +97,21 @@ jobs:
           assert len(ids)>1000
           assert np.any(facets<721) and np.any(facets>=721)
           b=BrainAdapter('full',cache,Path('state/retina-full-ci.npz'),mapping='retinotopic')
-          stimulus=np.zeros(1442,dtype=np.float32)
-          stimulus[int(facets[0])]=1.0
+          # Verify L1 ON and L2 OFF selectively stimulate the actual
+          # source-identified cells, not merely some unrelated graph activity.
+          l1=next(r for r in meta['entries'] if r['type']=='L1')
+          l2=next(r for r in meta['entries'] if r['type']=='L2')
           quiet=np.zeros(1442,dtype=np.float32)
-          response=b.step(0,0,0,stimulus.tolist(),quiet.tolist())
-          print('Per-facet FlyWire response:',response)
-          assert response['active']>0
+          on=quiet.copy()
+          on[l1['facet_index']]=1.0
+          result_on=b.step(0,0,0,on.tolist(),quiet.tolist())
+          assert bool(b.brain.spikes[l1['neuron_index']])
+          print('Real L1 ON pathway:',result_on)
+          off=quiet.copy()
+          off[l2['facet_index']]=1.0
+          result_off=b.step(1,0,0,quiet.tolist(),off.tolist())
+          assert bool(b.brain.spikes[l2['neuron_index']])
+          print('Real L2 OFF pathway:',result_off)
           assert b.hello()['retinotopy']['kind']=='UNVALIDATED_axial_fit'
           b.save()
           PY
