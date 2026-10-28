@@ -82,16 +82,18 @@ pub fn extract_landmark_signals(frame: &VisionFrame) -> (f32, f32) {
         let g = p[1] as f32 / 255.0;
         let b = p[2] as f32 / 255.0;
         // Detect orange/red and blue objects, suppress green floor / blue sky.
-        let orange = (r - g * 1.3).max(0.0) * (r - b * 1.1).max(0.0);
-        let blue = (b - r * 1.25).max(0.0) * (b - g * 1.10).max(0.0);
-        let salient = (orange + blue).min(1.0);
+        // Require a strong chromatic contrast, so plain sky and floor
+        // are not mistaken for blue/red landmarks.
+        let orange = (r - g.max(b) - 0.16).max(0.0);
+        let blue = (b - r.max(g) - 0.16).max(0.0);
+        let salient = ((orange + blue) * 2.0).min(1.0);
         let side = if x < width / 2 { 0 } else { 1 };
         sum[side] += salient;
         count[side] += 1;
     }
     (
-        (sum[0] / (count[0].max(1) as f32) * 15.0).clamp(0.0, 1.0),
-        (sum[1] / (count[1].max(1) as f32) * 15.0).clamp(0.0, 1.0),
+        (sum[0] / (count[0].max(1) as f32) * 40.0).clamp(0.0, 1.0),
+        (sum[1] / (count[1].max(1) as f32) * 40.0).clamp(0.0, 1.0),
     )
 }
 
@@ -124,6 +126,16 @@ mod tests {
         let frame = VisionFrame::new(8,4,rgba).unwrap();
         let (left,right) = extract_landmark_signals(&frame);
         assert!(left>0.5 && right<0.01);
+    }
+    #[test]
+    fn clear_sky_and_green_floor_are_not_false_targets() {
+        for rgba in [[75u8, 95, 125, 255], [20, 40, 65, 255],
+                     [40, 90, 60, 255]] {
+            let pixels = rgba.repeat(32);
+            let frame = VisionFrame::new(8, 4, pixels).unwrap();
+            let (left, right) = extract_landmark_signals(&frame);
+            assert!(left == 0.0 && right == 0.0);
+        }
     }
     #[test]
     fn frame_requires_exact_rgba_length() {

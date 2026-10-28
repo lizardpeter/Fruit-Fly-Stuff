@@ -419,7 +419,7 @@ impl Renderer {
             let projection = Mat4::perspective_rh(58.0_f32.to_radians(), aspect, 0.05, 100.0);
             let vp = projection * view;
 
-            let objects = world.objects();
+            let (objects, environment_count) = world.objects_with_environment_count();
             if objects.len() > 256 { return Err("scene exceeds instance buffer capacity".into()); }
             // Fence was waited on at the beginning of the frame: the GPU
             // cannot still be reading this host-coherent buffer.
@@ -445,7 +445,7 @@ impl Renderer {
             self.device.cmd_end_rendering(cb);
             self.eye.as_mut().expect("eye initialized").record(
                 &self.device, cb, self.pipeline, self.layout,
-                self.descriptor_set, objects.len() as u32,
+                self.descriptor_set, environment_count as u32,
             );
             let end = [vk::ImageMemoryBarrier::default()
                 .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)

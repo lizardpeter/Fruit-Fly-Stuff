@@ -83,7 +83,9 @@ impl World {
         (left, right)
     }
 
-    pub fn objects(&self) -> Vec<Object> {
+    /// The first group of scene objects is the external environment;
+    /// those are the ONLY objects visible to the fly's eye.
+    pub fn objects_with_environment_count(&self) -> (Vec<Object>, usize) {
         let mut o = Vec::with_capacity(64);
         // The world is a broad green floor with a few unmistakable markers.
         o.push(Object::cuboid(Vec3::new(0.0, -0.06, 0.0), Vec3::new(18.0, 0.1, 18.0), [0.14, 0.33, 0.23, 1.0]));
@@ -93,6 +95,7 @@ impl World {
         }
         o.push(Object::cuboid(Vec3::new(2.2, 0.25, 2.0), Vec3::new(0.5, 0.5, 0.5), [0.84, 0.41, 0.21, 1.0]));
         o.push(Object::cuboid(Vec3::new(-2.2, 0.35, -1.6), Vec3::new(0.7, 0.7, 0.7), [0.31, 0.55, 0.86, 1.0]));
+        let environment_count = o.len();
 
         let p = self.fly.position;
         let yaw = Quat::from_rotation_y(self.fly.heading);
@@ -116,7 +119,11 @@ impl World {
                      [0.20, 0.15, 0.10, 1.0]);
             }
         }
-        o
+        (o, environment_count)
+    }
+
+    pub fn objects(&self) -> Vec<Object> {
+        self.objects_with_environment_count().0
     }
 }
 
