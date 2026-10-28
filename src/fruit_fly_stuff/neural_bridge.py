@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 
 from .checkpoint import load_checkpoint, save_checkpoint
+from .annotated_mapping import classified_groups
 from .simulation import Connectome, SpikingBrain
 from .whole_brain import WholeBrain, load_graph, sha256_file
 
@@ -59,9 +60,13 @@ def strongest_disjoint_edges(graph) -> tuple[tuple[int, int], tuple[int, int]]:
 
 
 class BrainAdapter:
-    def __init__(self, mode: str, cache_dir: Path, checkpoint: Path):
+    def __init__(self, mode: str, cache_dir: Path, checkpoint: Path, mapping: str = "classified"):
         self.mode = mode
         self.checkpoint = checkpoint
+        if mapping not in ("classified", "probes"):
+            raise ValueError("mapping must be classified or probes")
+        self.mapping_name = mapping
+        self.groups = None
         if mode == "toy":
             self.brain = load_checkpoint(checkpoint) if checkpoint.exists() else toy_brain()
             if self.brain.connectome.n_neurons != 4:
@@ -77,7 +82,11 @@ class BrainAdapter:
             self.brain = WholeBrain(graph, ids)
             if checkpoint.exists():
                 self.brain.restore(checkpoint, graph_sha=self.graph_hash)
-            self.left, self.right = strongest_disjoint_edges(graph)
+            if mapping == "classified":
+                self.groups = classified_groups(cache_dir.parent / "classification.csv.gz", ids)
+                self.left = self.right = None
+            else:
+                self.left, self.right = strongest_disjoint_edges(graph)
             self.edges = graph.nnz
             self.ids = ids
             self.metadata = metadata
@@ -86,6 +95,8 @@ class BrainAdapter:
 
     def hello(self) -> dict:
         def link(pair):
+            if pair is None:
+                return None
             if self.ids is None:
                 return {"input_index": pair[0], "output_index": pair[1]}
             return {
@@ -100,26 +111,46 @@ class BrainAdapter:
             "left_probe": link(self.left),
             "right_probe": link(self.right),
             "mapping": "synthetic toy circuit" if self.mode == "toy" else
-                       "strongest disjoint FlyWire neuron-pair probes (not anatomical motor/sensory assignments)",
+                ("classified optic-lobe inputs and descending-neuron readout; "
+                 "pixel-to-neuron and motor mappings are NOT biologically calibrated"
+                 if self.groups is not None else
+                 "strongest disjoint FlyWire neuron-pair probes (not anatomical motor/sensory assignments)"),
+            "anatomical_groups": self.groups["metadata"] if self.groups is not None else None,
         }
 
     def step(self, sequence: int, left: float, right: float) -> dict:
         for x in (left, right):
             if not np.isfinite(x) or x < 0 or x > 1:
                 raise ValueError("left and right must be finite in [0, 1]")
-        # Constant-threshold encoding with an explicitly artificial rate scale.
-        excite = np.array([idx for input_value, (idx, _) in
-                           [(left, self.left), (right, self.right)]
-                           if input_value >= 0.08], dtype=np.int32)
-        if self.mode == "toy":
-            drive = np.zeros(4, dtype=np.float64)
-            drive[excite] = 1.2
-            spikes = self.brain.step(drive)
-        else:
+        if self.groups is not None:
+            # Anatomically assigned *broad classes*, experimental encoding:
+            # strong camera signal drives up to 256 optic-lobe neurons by side.
+            excite_parts = []
+            if left >= 0.08:
+                excite_parts.append(self.groups["visual_left"])
+            if right >= 0.08:
+                excite_parts.append(self.groups["visual_right"])
+            excite = (np.concatenate(excite_parts) if excite_parts else
+                      np.empty(0, dtype=np.int32))
             self.brain.step(excite)
             spikes = self.brain.spikes
-        left_spike = bool(spikes[self.left[1]])
-        right_spike = bool(spikes[self.right[1]])
+            # Descending neurons are real classifications. We do not know
+            # whether their firing means left/right walking in this model.
+            left_spike = bool(np.any(spikes[self.groups["descending_left"]]))
+            right_spike = bool(np.any(spikes[self.groups["descending_right"]]))
+        else:
+            excite = np.array([idx for input_value, (idx, _) in
+                               [(left, self.left), (right, self.right)]
+                               if input_value >= 0.08], dtype=np.int32)
+            if self.mode == "toy":
+                drive = np.zeros(4, dtype=np.float64)
+                drive[excite] = 1.2
+                spikes = self.brain.step(drive)
+            else:
+                self.brain.step(excite)
+                spikes = self.brain.spikes
+            left_spike = bool(spikes[self.left[1]])
+            right_spike = bool(spikes[self.right[1]])
         # Only measured spikes from the network drive outputs. Smoothing and
         # robot-like motor translation happen in the Rust environment.
         return {
@@ -136,8 +167,8 @@ class BrainAdapter:
             save_checkpoint(self.brain, self.checkpoint)
 
 
-def serve(mode: str, cache_dir: Path, checkpoint: Path, save_every: int = 300) -> int:
-    adapter = BrainAdapter(mode, cache_dir, checkpoint)
+def serve(mode: str, cache_dir: Path, checkpoint: Path, save_every: int = 300, mapping: str = "classified") -> int:
+    adapter = BrainAdapter(mode, cache_dir, checkpoint, mapping=mapping)
     sys.stdout.write(json.dumps(adapter.hello()) + "\n")
     sys.stdout.flush()
     previous_seq = -1
@@ -178,11 +209,12 @@ def main() -> None:
     parser.add_argument("--cache-dir", type=Path, default=Path("data/fafb783/processed"))
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--save-every", type=int, default=300)
+    parser.add_argument("--mapping", choices=("classified", "probes"), default="classified")
     args = parser.parse_args()
     if args.save_every < 1:
         parser.error("--save-every must be >= 1")
     checkpoint = args.checkpoint or Path(f"state/bridge-{args.mode}.npz")
-    raise SystemExit(serve(args.mode, args.cache_dir, checkpoint, args.save_every))
+    raise SystemExit(serve(args.mode, args.cache_dir, checkpoint, args.save_every, args.mapping))
 
 
 if __name__ == "__main__":
