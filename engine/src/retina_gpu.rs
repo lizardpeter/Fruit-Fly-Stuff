@@ -124,22 +124,31 @@ impl GpuFacetSampler {
         })
     }
 
-    /// The offscreen eye image must currently be TRANSFER_SRC_OPTIMAL, after
-    /// Vulkan has copied it to a snapshot staging buffer.
+    /// When copied=true, source image is TRANSFER_SRC_OPTIMAL after
+    /// a screenshot copy; otherwise it is COLOR_ATTACHMENT_OPTIMAL.
     pub unsafe fn record(
         &self, device: &ash::Device, command: vk::CommandBuffer, eye_image: vk::Image,
+        copied: bool,
     ) {
         let range = vk::ImageSubresourceRange::default()
             .aspect_mask(vk::ImageAspectFlags::COLOR).level_count(1).layer_count(1);
+        let (src_stage, src_access, old_layout) = if copied {
+            (vk::PipelineStageFlags::TRANSFER, vk::AccessFlags::TRANSFER_READ,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+        } else {
+            (vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+        };
         let to_read = [vk::ImageMemoryBarrier::default()
-            .src_access_mask(vk::AccessFlags::TRANSFER_READ)
+            .src_access_mask(src_access)
             .dst_access_mask(vk::AccessFlags::SHADER_READ)
-            .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+            .old_layout(old_layout)
             .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
             .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
             .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
             .image(eye_image).subresource_range(range)];
-        device.cmd_pipeline_barrier(command, vk::PipelineStageFlags::TRANSFER,
+        device.cmd_pipeline_barrier(command, src_stage,
             vk::PipelineStageFlags::COMPUTE_SHADER, vk::DependencyFlags::empty(),
             &[], &[], &to_read);
         device.cmd_bind_pipeline(command, vk::PipelineBindPoint::COMPUTE, self.pipeline);
@@ -169,9 +178,10 @@ impl GpuFacetSampler {
             samples.push([values[0], values[1], values[2]]);
         }
         device.unmap_memory(self.output_memory);
-        if samples.iter().flatten().any(|x| !x.is_finite() || *x < -0.001 || *x > 1.001)
-            || samples.iter().all(|rgb| rgb.iter().all(|x| x.abs() < 0.0001)) {
-            return Err("invalid or empty Vulkan facet samples".into());
+        // A completely black image is valid sensory input (lights out).
+        // Reject corrupt/nonfinite data, but never demand a bright pixel.
+        if samples.iter().flatten().any(|x| !x.is_finite() || *x < -0.001 || *x > 1.001) {
+            return Err("invalid Vulkan facet samples".into());
         }
         Ok(samples)
     }

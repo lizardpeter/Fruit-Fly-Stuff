@@ -62,6 +62,7 @@ jobs:
           timeout 90s xvfb-run -a env \
             VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
             FRUIT_FLY_SMOKE_FRAMES=240 \
+            FRUIT_FLY_RETINA_VERIFY_GPU=1 \
             FRUIT_FLY_BRAIN_MODE=toy \
             FRUIT_FLY_EYE_SNAPSHOT="$GITHUB_WORKSPACE/results/fly-eye.bmp" \
             FRUIT_FLY_PYTHON=python \
@@ -70,6 +71,7 @@ jobs:
             ./engine/target/debug/fruit-fly-engine 2>&1 | tee "$RUNNER_TEMP/bridge-log.txt"
           grep -q "Neural bridge ready: toy with 4 neurons" "$RUNNER_TEMP/bridge-log.txt"
           grep -q "Neural step" "$RUNNER_TEMP/bridge-log.txt"
+          grep -q "Retina GPU/CPU parity PASS:" "$RUNNER_TEMP/bridge-log.txt"
           grep -Eq "Fly-eye GPU pixels captured=[1-9][0-9]*" "$RUNNER_TEMP/bridge-log.txt"
           python - <<'PY'
           from pathlib import Path
@@ -80,6 +82,16 @@ jobs:
           assert len(image) == 54 + 128 * 96 * 4
           print('Real Vulkan fly-eye screenshot saved and validated.')
           PY
+      - name: Black-screen regression - darkness is valid neural input
+        run: |
+          timeout 45s xvfb-run -a env \
+            VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
+            FRUIT_FLY_SMOKE_FRAMES=5 \
+            FRUIT_FLY_SMOKE_BLACK_EYE=1 \
+            FRUIT_FLY_RETINA_VERIFY_GPU=1 \
+            ./engine/target/debug/fruit-fly-engine 2>&1 | tee "$RUNNER_TEMP/black-eye-log.txt"
+          grep -q "Retina GPU/CPU parity PASS:" "$RUNNER_TEMP/black-eye-log.txt"
+          grep -q "Vulkan smoke: presented 5 frames" "$RUNNER_TEMP/black-eye-log.txt"
       - uses: actions/upload-artifact@v4
         with:
           name: fly-eye-camera-snapshot
