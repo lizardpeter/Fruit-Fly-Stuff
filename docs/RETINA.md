@@ -88,3 +88,15 @@ Full-brain checkpoints are now separated by mapping mode: `state/bridge-full-cla
 ### Optical GPU/CPU correctness and dark scenes
 
 The Vulkan workflow now enables `FRUIT_FLY_RETINA_VERIFY_GPU=1` for an actual 1,442-facet shader-versus-CPU numerical comparison on the first rendered frame. The CPU reference decodes sRGB when the offscreen render target has an sRGB format. Any discrepancy above 0.012 causes a failing runtime test. A fully black image is valid; the previous non-black requirement has been removed. Full-image GPU-to-host copies and CPU readback happen only for explicit eye snapshots or the parity test; ordinary sensory updates use only the small Vulkan compute-buffer readback. This test checks software consistency, **not biological accuracy**.
+
+### Deterministic visual-event experiment
+
+For a test of actual environmental input rather than an assumed neuron spike, set `FRUIT_FLY_VISION_TRIAL=1` and `FRUIT_FLY_SMOKE_FRAMES=240` in the Vulkan engine environment. The world briefly displays a white bar directly ahead of a stationary fly (time 0.75–1.50 s). The real GPU-rendered camera, Vulkan optical sampler and stateful photoreceptor model must generate both an ON transient when the object appears and an OFF transient when it disappears. GitHub Actions asserts both signals are present. This tests the conversion chain, **not** the biological correctness of its calibration or a fly behavior.
+
+### Display frame pacing (world-time regression)
+
+The engine now schedules redraws against the previous frame's time instead of calling `request_redraw` repeatedly in its idle callback. The old loop bypassed its 16 ms wait deadline and could render hundreds of frames in under a second, badly distorting the correspondence between CI frame counts and simulated visual events. The physical visual-event regression now also checks that simulation time has progressed far enough to show both transitions.
+
+### Projected facet layout v2
+
+The original axial-to-pixel formula accidentally used a denominator three times larger than the lattice extent, so each eye sampled an unnecessarily narrow band and missed much of the camera image, including parts of the forward center. The v2 normalization covers nearly the full source half-image (with a small edge margin). The facet IDs and FAFB root IDs are unchanged, but the **pixel-to-facet geometry is different**, so the compiled mapping layout ID is bumped to `two-721-projected-hex-halves-v2`; old v1 mapping manifests must be regenerated, and mismatched neural checkpoints will be rejected. This is still a projected approximation, not measured compound-eye calibration.

@@ -44,6 +44,8 @@ pub struct World {
     pub fly: FlyState,
     pub time: f32,
     pub paused: bool,
+    /// Opt-in deterministic bright-bar onset/offset experiment for renderer CI.
+    pub visual_trial: bool,
 }
 
 impl World {
@@ -95,6 +97,18 @@ impl World {
         }
         o.push(Object::cuboid(Vec3::new(2.2, 0.25, 2.0), Vec3::new(0.5, 0.5, 0.5), [0.84, 0.41, 0.21, 1.0]));
         o.push(Object::cuboid(Vec3::new(-2.2, 0.35, -1.6), Vec3::new(0.7, 0.7, 0.7), [0.31, 0.55, 0.86, 1.0]));
+        // Deterministic visual event for actual GPU/retina validation:
+        // high-contrast bright bar appears for 0.75 s then disappears.
+        // Geometry belongs to the world and is visible to both cameras.
+        if self.visual_trial && (0.75..1.50).contains(&self.time) {
+            let forward = Vec3::new(self.fly.heading.sin(), 0.0, self.fly.heading.cos());
+            o.push(Object::oriented(
+                self.fly.position + forward * 3.0 + Vec3::Y * 0.22,
+                Vec3::new(2.0, 1.8, 0.08),
+                Quat::from_rotation_y(self.fly.heading),
+                [1.0, 1.0, 1.0, 1.0],
+            ));
+        }
         let environment_count = o.len();
 
         let p = self.fly.position;
@@ -153,6 +167,19 @@ mod tests {
         w.fly.heading = std::f32::consts::FRAC_PI_2;
         let (left, _right) = w.landmark_senses();
         assert!(left > 0.0);
+    }
+    #[test]
+    fn visual_trial_has_a_bright_object_only_in_the_stimulus_window() {
+        let mut w = World::default();
+        w.visual_trial = true;
+        w.time = 0.5;
+        let baseline = w.objects_with_environment_count().1;
+        w.time = 1.0;
+        let (objects, illuminated) = w.objects_with_environment_count();
+        assert_eq!(illuminated, baseline + 1);
+        assert_eq!(objects[illuminated - 1].color, [1.0; 4]);
+        w.time = 1.6;
+        assert_eq!(w.objects_with_environment_count().1, baseline);
     }
     #[test]
     fn scene_contains_body_and_landmarks() {

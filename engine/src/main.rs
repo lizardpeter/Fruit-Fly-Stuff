@@ -533,11 +533,17 @@ struct App {
     neural_clock: f32,
     rendered_frames: u32,
     smoke_frames: Option<u32>,
+    trial_peak_on: f32,
+    trial_peak_off: f32,
 }
 impl Default for App {
     fn default() -> Self {
         Self {
-            window: None, renderer: None, world: World::default(),
+            window: None, renderer: None,
+            world: World {
+                visual_trial: std::env::var_os("FRUIT_FLY_VISION_TRIAL").is_some(),
+                ..World::default()
+            },
             keys: HashSet::new(), camera_orbit: 0.6,
             autopilot: true, frame_started: Instant::now(),
             neural: NeuralLink::from_environment(),
@@ -546,6 +552,7 @@ impl Default for App {
             neural_age: 99.0,
             neural_clock: 0.0,
             rendered_frames: 0,
+            trial_peak_on: 0.0, trial_peak_off: 0.0,
             smoke_frames: std::env::var("FRUIT_FLY_SMOKE_FRAMES")
                 .ok().and_then(|n| n.parse::<u32>().ok()).filter(|&n| n > 0),
         }
@@ -669,7 +676,11 @@ impl ApplicationHandler for App {
                 } else {
                     MotorCommand {forward: direction, turn}
                 };
-                self.world.step(dt, motor);
+                self.world.step(dt, if self.world.visual_trial {
+                    // Remove locomotor visual flow: only the physical bright
+                    // bar should change the eye during this controlled trial.
+                    MotorCommand::default()
+                } else { motor });
                 if let Some(renderer) = self.renderer.as_mut() {
                     if let Err(err) = renderer.draw(&self.world, self.camera_orbit, dt) {
                         eprintln!("Render failed (resizing/recreating swapchains is not implemented): {err}");
@@ -681,7 +692,23 @@ impl ApplicationHandler for App {
                             println!("Fly-eye GPU pixels captured={} left={:.3} right={:.3}",
                                 renderer.captured_eye_frames(), eye.0, eye.1);
                         }
+                        if self.world.visual_trial {
+                            self.trial_peak_on = self.trial_peak_on.max(
+                                renderer.facet_signals().iter().copied().fold(0.0, f32::max));
+                            self.trial_peak_off = self.trial_peak_off.max(
+                                renderer.facet_off_signals().iter().copied().fold(0.0, f32::max));
+                        }
                         if self.smoke_frames.is_some_and(|max| self.rendered_frames >= max) {
+                            if self.world.visual_trial {
+                                if self.world.time >= 1.7
+                                    && self.trial_peak_on > 0.04 && self.trial_peak_off > 0.04 {
+                                    println!("Retina visual trial PASS: on_peak={:.4} off_peak={:.4}",
+                                        self.trial_peak_on, self.trial_peak_off);
+                                } else {
+                                    eprintln!("Retina visual trial FAIL: t={:.3} on_peak={:.4} off_peak={:.4}",
+                                        self.world.time, self.trial_peak_on, self.trial_peak_off);
+                                }
+                            }
                             println!("Vulkan smoke: presented {} frames", self.rendered_frames);
                             event_loop.exit();
                         }
@@ -693,11 +720,18 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // Approximately 60 Hz redraw requests without a busy-spin.
-        event_loop.set_control_flow(ControlFlow::WaitUntil(
-            Instant::now() + Duration::from_millis(16)
-        ));
-        if let Some(w) = self.window.as_ref() { w.request_redraw(); }
+        // Requesting redraw *every* about_to_wait bypasses WaitUntil and
+        // causes a busy-loop; 240 frames formerly advanced just 0.8 s!
+        // Schedule the next request relative to the previous rendered frame.
+        let deadline = self.frame_started + Duration::from_millis(16);
+        if Instant::now() >= deadline {
+            if let Some(window) = self.window.as_ref() {
+                window.request_redraw();
+            }
+            event_loop.set_control_flow(ControlFlow::Wait);
+        } else {
+            event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+        }
     }
 
     fn exiting(&mut self, _: &ActiveEventLoop) {
