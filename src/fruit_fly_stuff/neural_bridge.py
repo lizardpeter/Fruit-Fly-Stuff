@@ -7,6 +7,7 @@ than a biologically established sensory/motor map.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -109,8 +110,6 @@ class BrainAdapter:
             graph, ids, metadata = load_graph(cache_dir)
             self.graph_hash = sha256_file(cache_dir / "adjacency.npz")
             self.brain = WholeBrain(graph, ids)
-            if checkpoint.exists():
-                self.brain.restore(checkpoint, graph_sha=self.graph_hash)
             if mapping in ("classified", "retinotopic"):
                 self.groups = classified_groups(cache_dir.parent / "classification.csv.gz", ids)
                 self.left = self.right = None
@@ -130,6 +129,16 @@ class BrainAdapter:
             self.edges = graph.nnz
             self.ids = ids
             self.metadata = metadata
+            context = {"mapping": mapping, "graph": self.graph_hash}
+            if self.groups is not None:
+                context["classification_sha256"] = self.groups["metadata"]["classification_sha256"]
+            if mapping == "retinotopic":
+                context["retinotopy_sha256"] = sha256_file(cache_dir / "retinotopy.json")
+            self.context_sha = hashlib.sha256(
+                json.dumps(context, sort_keys=True).encode("utf-8")).hexdigest()
+            if checkpoint.exists():
+                self.brain.restore(checkpoint, graph_sha=self.graph_hash,
+                                   context_sha=self.context_sha)
         else:
             raise ValueError("mode must be toy or full")
 
@@ -213,7 +222,8 @@ class BrainAdapter:
 
     def save(self) -> None:
         if self.mode == "full":
-            self.brain.save(self.checkpoint, graph_sha=self.graph_hash)
+            self.brain.save(self.checkpoint, graph_sha=self.graph_hash,
+                            context_sha=self.context_sha)
         else:
             save_checkpoint(self.brain, self.checkpoint)
 
@@ -264,7 +274,9 @@ def main() -> None:
     args = parser.parse_args()
     if args.save_every < 1:
         parser.error("--save-every must be >= 1")
-    checkpoint = args.checkpoint or Path(f"state/bridge-{args.mode}.npz")
+    filename = (f"bridge-full-{args.mapping}.npz" if args.mode == "full"
+                else "bridge-toy.npz")
+    checkpoint = args.checkpoint or Path("state") / filename
     raise SystemExit(serve(args.mode, args.cache_dir, checkpoint, args.save_every, args.mapping))
 
 

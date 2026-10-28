@@ -227,7 +227,7 @@ class WholeBrain:
         self.steps += 1
         return int(np.count_nonzero(self.spikes))
 
-    def save(self, path: Path, *, graph_sha: str) -> None:
+    def save(self, path: Path, *, graph_sha: str, context_sha: str | None = None) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = None
         try:
@@ -240,6 +240,7 @@ class WholeBrain:
                     gain=np.array([self.gain]), leak=np.array([self.leak]),
                     voltage=self.voltage, spikes=self.spikes,
                     graph_sha=np.array([graph_sha]),
+                    context_sha=np.array([context_sha or ""]),
                 )
                 stream.flush()
                 os.fsync(stream.fileno())
@@ -248,9 +249,12 @@ class WholeBrain:
             if temp_path and temp_path.exists():
                 temp_path.unlink()
 
-    def restore(self, path: Path, *, graph_sha: str) -> None:
+    def restore(self, path: Path, *, graph_sha: str, context_sha: str | None = None) -> None:
         with np.load(path, allow_pickle=False) as state:
-            if (int(state["version"][0]) != 1 or
+            stored_context = (str(state["context_sha"][0])
+                              if "context_sha" in state.files else "")
+            if (stored_context != (context_sha or "") or
+                int(state["version"][0]) != 1 or
                 str(state["graph_sha"][0]) != graph_sha or
                 state["voltage"].shape != self.voltage.shape or
                 state["spikes"].shape != self.spikes.shape or

@@ -80,3 +80,7 @@ The previous sampler rectified all decreases in luminance to zero, losing dark e
 ### Timebase correction
 
 The photoreceptor response now advances using elapsed world-simulation time, not a hard-coded 60 Hz assumption. Pausing the world freezes receptor/adaptation state. This improves consistency across computers but still does not establish measured fly kinetics.
+
+### Checkpoint compatibility and neural persistence
+
+Full-brain checkpoints are now separated by mapping mode: `state/bridge-full-classified.npz`, `state/bridge-full-probes.npz`, and `state/bridge-full-retinotopic.npz`. The checkpoint also records a fingerprint of the graph, mapping mode, source classification data, and retina manifest. A different visual calibration fails restoration rather than silently reusing incompatible neural state. Earlier standalone whole-brain checkpoints remain compatible with the standalone simulator, but old bridge checkpoint filenames are not automatically migrated.

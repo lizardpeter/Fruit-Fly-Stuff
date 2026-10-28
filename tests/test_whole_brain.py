@@ -82,3 +82,22 @@ def test_duplicate_neuron_roots_rejected(tmp_path):
     write_gzip_csv(tmp_path / "neurons.csv.gz", ["root_id"], [[11], [11]])
     with pytest.raises(ValueError, match="duplicate"):
         prepare(tmp_path)
+
+
+def test_checkpoint_rejects_incompatible_sensory_mapping(tmp_path):
+    location = sample_data(tmp_path)
+    prepare(location)
+    graph, ids, _ = load_graph(location / "processed")
+    brain = WholeBrain(graph, ids)
+    checkpoint = location / "mapping-memory.npz"
+    brain.step(np.array([0], dtype=np.int32))
+    brain.save(checkpoint, graph_sha="graph-123", context_sha="retina-layout-A")
+    restored = WholeBrain(graph, ids)
+    with pytest.raises(ValueError, match="incompatible"):
+        restored.restore(checkpoint, graph_sha="graph-123",
+                         context_sha="retina-layout-B")
+    with pytest.raises(ValueError, match="incompatible"):
+        restored.restore(checkpoint, graph_sha="graph-123")
+    restored.restore(checkpoint, graph_sha="graph-123",
+                     context_sha="retina-layout-A")
+    assert restored.steps == 1
