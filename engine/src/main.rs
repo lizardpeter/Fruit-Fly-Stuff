@@ -51,6 +51,11 @@ struct Renderer {
     depth_view: vk::ImageView,
     layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
+    instance_buffer: vk::Buffer,
+    instance_memory: vk::DeviceMemory,
+    descriptor_layout: vk::DescriptorSetLayout,
+    descriptor_pool: vk::DescriptorPool,
+    descriptor_set: vk::DescriptorSet,
     command_pool: vk::CommandPool,
     command_buffer: vk::CommandBuffer,
     image_ready: vk::Semaphore,
@@ -197,6 +202,46 @@ impl Renderer {
                         .level_count(1).layer_count(1)),
                 None)?;
 
+            // One persistently reusable CPU-visible storage buffer holds instance
+            // transforms and colors. The vertex shader draws all boxes in one call.
+            const MAX_OBJECTS: usize = 256;
+            const OBJECT_STRIDE: usize = 80; // mat4x4 + vec4, std430
+            let buffer_info = vk::BufferCreateInfo::default()
+                .size((MAX_OBJECTS * OBJECT_STRIDE) as u64)
+                .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+            let instance_buffer = device.create_buffer(&buffer_info, None)?;
+            let buffer_needs = device.get_buffer_memory_requirements(instance_buffer);
+            let host_flags = vk::MemoryPropertyFlags::HOST_VISIBLE
+                | vk::MemoryPropertyFlags::HOST_COHERENT;
+            let host_idx = (0..mem.memory_type_count)
+                .find(|&i| (buffer_needs.memory_type_bits & (1 << i)) != 0
+                    && mem.memory_types[i as usize].property_flags.contains(host_flags))
+                .ok_or("No host-coherent memory for instance buffer")?;
+            let instance_memory = device.allocate_memory(
+                &vk::MemoryAllocateInfo::default()
+                    .allocation_size(buffer_needs.size).memory_type_index(host_idx), None)?;
+            device.bind_buffer_memory(instance_buffer, instance_memory, 0)?;
+            let bindings = [vk::DescriptorSetLayoutBinding::default()
+                .binding(0).descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1).stage_flags(vk::ShaderStageFlags::VERTEX)];
+            let descriptor_layout = device.create_descriptor_set_layout(
+                &vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings), None)?;
+            let sizes = [vk::DescriptorPoolSize::default()
+                .ty(vk::DescriptorType::STORAGE_BUFFER).descriptor_count(1)];
+            let descriptor_pool = device.create_descriptor_pool(
+                &vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&sizes), None)?;
+            let set_layouts = [descriptor_layout];
+            let descriptor_set = device.allocate_descriptor_sets(
+                &vk::DescriptorSetAllocateInfo::default()
+                    .descriptor_pool(descriptor_pool).set_layouts(&set_layouts))?[0];
+            let stored = [vk::DescriptorBufferInfo::default()
+                .buffer(instance_buffer).offset(0).range((MAX_OBJECTS * OBJECT_STRIDE) as u64)];
+            let updates = [vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set).dst_binding(0).descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .buffer_info(&stored)];
+            device.update_descriptor_sets(&updates, &[]);
+
             let vertex_code = shader_words(include_bytes!(concat!(env!("OUT_DIR"), "/scene.vert.spv")));
             let fragment_code = shader_words(include_bytes!(concat!(env!("OUT_DIR"), "/scene.frag.spv")));
             let vert = device.create_shader_module(&vk::ShaderModuleCreateInfo::default()
@@ -211,11 +256,8 @@ impl Renderer {
                 vk::PipelineShaderStageCreateInfo::default()
                     .stage(vk::ShaderStageFlags::FRAGMENT).module(frag).name(&fragment_name),
             ];
-            let push = [vk::PushConstantRange::default()
-                .stage_flags(vk::ShaderStageFlags::VERTEX)
-                .offset(0).size(80)];
             let layout = device.create_pipeline_layout(
-                &vk::PipelineLayoutCreateInfo::default().push_constant_ranges(&push), None)?;
+                &vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts), None)?;
             let vertex_input = vk::PipelineVertexInputStateCreateInfo::default();
             let assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
                 .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
@@ -279,6 +321,7 @@ impl Renderer {
                 _entry: entry, instance, surface_loader, surface, device, queue,
                 swap_loader, swapchain, images, image_views, extent,
                 depth_image, depth_memory, depth_view, layout, pipeline,
+                instance_buffer, instance_memory, descriptor_layout, descriptor_pool, descriptor_set,
                 command_pool, command_buffer, image_ready, render_done, finished,
             })
         }
@@ -360,16 +403,23 @@ impl Renderer {
             let projection = Mat4::perspective_rh(58.0_f32.to_radians(), aspect, 0.05, 100.0);
             let vp = projection * view;
 
-            for object in world.objects() {
+            let objects = world.objects();
+            if objects.len() > 256 { return Err("scene exceeds instance buffer capacity".into()); }
+            // Fence was waited on at the beginning of the frame: the GPU
+            // cannot still be reading this host-coherent buffer.
+            let mapped = self.device.map_memory(self.instance_memory, 0,
+                (256 * 80) as u64, vk::MemoryMapFlags::empty())? as *mut f32;
+            for (index, object) in objects.iter().enumerate() {
                 let matrix = (vp * object.transform).to_cols_array();
                 let mut data = [0.0_f32; 20];
                 data[..16].copy_from_slice(&matrix);
                 data[16..].copy_from_slice(&object.color);
-                let bytes = std::slice::from_raw_parts(data.as_ptr() as *const u8, 80);
-                self.device.cmd_push_constants(cb, self.layout,
-                    vk::ShaderStageFlags::VERTEX, 0, bytes);
-                self.device.cmd_draw(cb, 36, 1, 0, 0);
+                std::ptr::copy_nonoverlapping(data.as_ptr(), mapped.add(index * 20), 20);
             }
+            self.device.unmap_memory(self.instance_memory);
+            self.device.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS,
+                self.layout, 0, &[self.descriptor_set], &[]);
+            self.device.cmd_draw(cb, 36, objects.len() as u32, 0, 0);
             self.device.cmd_end_rendering(cb);
             let end = [vk::ImageMemoryBarrier::default()
                 .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
@@ -413,6 +463,10 @@ impl Drop for Renderer {
             self.device.destroy_command_pool(self.command_pool, None);
             self.device.destroy_pipeline(self.pipeline, None);
             self.device.destroy_pipeline_layout(self.layout, None);
+            self.device.destroy_descriptor_pool(self.descriptor_pool, None);
+            self.device.destroy_descriptor_set_layout(self.descriptor_layout, None);
+            self.device.destroy_buffer(self.instance_buffer, None);
+            self.device.free_memory(self.instance_memory, None);
             self.device.destroy_image_view(self.depth_view, None);
             self.device.destroy_image(self.depth_image, None);
             self.device.free_memory(self.depth_memory, None);
