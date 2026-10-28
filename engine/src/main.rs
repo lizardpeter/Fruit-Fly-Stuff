@@ -342,15 +342,19 @@ impl Renderer {
         self.eye.as_ref().map_or(&[], EyePass::facet_signals)
     }
 
+    fn facet_off_signals(&self) -> &[f32] {
+        self.eye.as_ref().map_or(&[], EyePass::facet_off_signals)
+    }
+
     fn captured_eye_frames(&self) -> u64 {
         self.eye.as_ref().map_or(0, EyePass::captured_frames)
     }
 
-    fn draw(&mut self, world: &World, orbit: f32) -> Result<()> {
+    fn draw(&mut self, world: &World, orbit: f32, delta_seconds: f32) -> Result<()> {
         unsafe {
             self.device.wait_for_fences(&[self.finished], true, u64::MAX)?;
             if let Some(eye) = self.eye.as_mut() {
-                eye.collect(&self.device)?;
+                eye.collect(&self.device, if world.paused { 0.0 } else { delta_seconds })?;
             }
             let (idx, _) = self.swap_loader.acquire_next_image(
                 self.swapchain, u64::MAX, self.image_ready, vk::Fence::null()
@@ -635,7 +639,10 @@ impl ApplicationHandler for App {
                         }
                     }
                     // Fixed neural control cadence, separate from Vulkan rendering FPS.
-                    self.neural_clock += dt;
+                    if !self.world.paused {
+                        // Never build up a backlog of stale sensory samples.
+                        self.neural_clock = (self.neural_clock + dt).min(1.0 / 30.0);
+                    }
                     if self.autopilot && !self.world.paused && self.neural_ready
                         && self.neural_clock >= 1.0 / 30.0 {
                         self.neural_clock -= 1.0 / 30.0;
@@ -645,7 +652,9 @@ impl ApplicationHandler for App {
                             .map_or((0.0, 0.0), Renderer::visual_signals);
                         let facets = self.renderer.as_ref()
                             .map_or(&[][..], Renderer::facet_signals);
-                        link.send_senses(left, right, facets);
+                        let off = self.renderer.as_ref()
+                            .map_or(&[][..], Renderer::facet_off_signals);
+                        link.send_senses(left, right, facets, off);
                     }
                 }
                 let motor = if self.autopilot {
@@ -662,7 +671,7 @@ impl ApplicationHandler for App {
                 };
                 self.world.step(dt, motor);
                 if let Some(renderer) = self.renderer.as_mut() {
-                    if let Err(err) = renderer.draw(&self.world, self.camera_orbit) {
+                    if let Err(err) = renderer.draw(&self.world, self.camera_orbit, dt) {
                         eprintln!("Render failed (resizing/recreating swapchains is not implemented): {err}");
                         event_loop.exit();
                     } else {

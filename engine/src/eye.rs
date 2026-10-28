@@ -56,6 +56,7 @@ pub struct EyePass {
     retina: Retina,
     gpu_sampler: GpuFacetSampler,
     facet_values: Vec<f32>,
+    facet_off_values: Vec<f32>,
 }
 
 impl EyePass {
@@ -95,11 +96,12 @@ impl EyePass {
             ready: false, last_signals: (0.0, 0.0), captured: 0,
             retina, gpu_sampler,
             facet_values: vec![0.0; fruit_fly_engine::retina::TOTAL_FACETS],
+            facet_off_values: vec![0.0; fruit_fly_engine::retina::TOTAL_FACETS],
         })
     }
 
     /// Call only after waiting on the previous frame's submission fence.
-    pub unsafe fn collect(&mut self, device: &ash::Device) -> Result<()> {
+    pub unsafe fn collect(&mut self, device: &ash::Device, delta_seconds: f32) -> Result<()> {
         if !self.ready { return Ok(()); }
         let bytes = (self.camera.width as usize) * (self.camera.height as usize) * 4;
         let ptr = device.map_memory(self.staging_memory, 0, bytes as u64,
@@ -118,16 +120,20 @@ impl EyePass {
         // RGB readings. CPU performs the tiny stateful biophysical-style
         // receptor dynamics; the full RGB readback is only for snapshots.
         let rgb = self.gpu_sampler.read_rgb(device)?;
-        let sample = self.retina.step_rgb_samples(&rgb, 1.0 / 60.0)?;
-        self.last_signals = (
-            sample.hemispheric_change[0],
-            sample.hemispheric_change[1],
-        );
-        for (dest, graded) in self.facet_values.iter_mut().zip(sample.graded.iter()) {
-            // Broadband photoreceptor response; R7 UV unavailable from RGB.
-            // These magnitudes are uncalibrated. Send individual facets rather
-            // than collapsing the retina to two binary inputs.
-            *dest = (graded[0] * 5.0).clamp(0.0, 1.0);
+        if delta_seconds > 0.0 {
+            // The retina runs on *world* time rather than assumed 60 Hz.
+            // Pausing the world also pauses retinal adaptation.
+            let sample = self.retina.step_rgb_samples(&rgb, delta_seconds.clamp(0.001, 0.05))?;
+            self.last_signals = (
+                sample.hemispheric_change[0],
+                sample.hemispheric_change[1],
+            );
+            for (dest, graded) in self.facet_values.iter_mut().zip(sample.graded.iter()) {
+                *dest = (graded[0] * 5.0).clamp(0.0, 1.0);
+            }
+            for (dest, off) in self.facet_off_values.iter_mut().zip(sample.off_contrast.iter()) {
+                *dest = (off * 5.0).clamp(0.0, 1.0);
+            }
         }
         // Optional snapshot of the fly's OWN view, not the human observer's.
         // Every ~120 frames; no disk I/O unless explicitly configured.
@@ -145,6 +151,7 @@ impl EyePass {
 
     pub fn signals(&self) -> (f32, f32) { self.last_signals }
     pub fn facet_signals(&self) -> &[f32] { &self.facet_values }
+    pub fn facet_off_signals(&self) -> &[f32] { &self.facet_off_values }
     pub fn captured_frames(&self) -> u64 { self.captured }
 
     pub unsafe fn record(

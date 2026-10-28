@@ -24,6 +24,7 @@ struct Step {
     left: f32,
     right: f32,
     facets: Vec<f32>,
+    facets_off: Vec<f32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,6 +53,7 @@ struct Request {
     left: f32,
     right: f32,
     facets: Vec<f32>,
+    facets_off: Vec<f32>,
 }
 
 /// Separate worker thread prevents Python + sparse matvec from blocking Vulkan.
@@ -72,13 +74,22 @@ fn python_program(root: &Path) -> PathBuf {
 }
 
 fn spawn_python(root: &Path, mode: &str) -> std::io::Result<Child> {
+    let mapping = env::var("FRUIT_FLY_NEURAL_MAPPING")
+        .unwrap_or_else(|_| "classified".to_owned());
+    if !["classified", "probes", "retinotopic"].contains(&mapping.as_str()) {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput,
+            "invalid FRUIT_FLY_NEURAL_MAPPING value"));
+    }
+    let checkpoint = if mode == "full" {
+        format!("bridge-full-{mapping}.npz")
+    } else { "bridge-toy.npz".to_owned() };
     Command::new(python_program(root))
         .arg("-u").arg("-m").arg("fruit_fly_stuff.neural_bridge")
         .arg("--mode").arg(mode)
         .arg("--mapping")
-        .arg(env::var("FRUIT_FLY_NEURAL_MAPPING").unwrap_or_else(|_| "classified".to_owned()))
+        .arg(mapping)
         .arg("--cache-dir").arg(root.join("data").join("fafb783").join("processed"))
-        .arg("--checkpoint").arg(root.join("state").join(format!("bridge-{mode}.npz")))
+        .arg("--checkpoint").arg(root.join("state").join(checkpoint))
         .current_dir(root)
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit())
         .spawn()
@@ -171,6 +182,7 @@ impl NeuralLink {
                     kind: "step", version: VERSION, seq: request.seq,
                     left: request.left, right: request.right,
                     facets: request.facets,
+                    facets_off: request.facets_off,
                 };
                 let transaction = serde_json::to_writer(&mut input, &msg)
                     .map_err(|e| e.to_string())
@@ -198,11 +210,16 @@ impl NeuralLink {
     }
 
     /// Backpressure: drop extra control requests rather than queuing old sensory frames.
-    pub fn send_senses(&mut self, left: f32, right: f32, facets: &[f32]) {
+    pub fn send_senses(&mut self, left: f32, right: f32, facets: &[f32], facets_off: &[f32]) {
+        if facets.len() != 1442 || facets_off.len() != 1442 {
+            eprintln!("Neural bridge refused malformed retina: expected 1442 ON and 1442 OFF facets");
+            return;
+        }
         let packet = Request {
             seq: self.next_seq, left: left.clamp(0.0, 1.0),
             right: right.clamp(0.0, 1.0),
             facets: facets.iter().map(|x| x.clamp(0.0, 1.0)).collect(),
+            facets_off: facets_off.iter().map(|x| x.clamp(0.0, 1.0)).collect(),
         };
         if self.requests.as_ref().is_some_and(|tx| tx.try_send(packet).is_ok()) {
             self.next_seq += 1;
