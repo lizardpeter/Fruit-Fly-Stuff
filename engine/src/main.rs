@@ -489,6 +489,8 @@ struct App {
     camera_orbit: f32,
     autopilot: bool,
     frame_started: Instant,
+    rendered_frames: u32,
+    smoke_frames: Option<u32>,
 }
 impl Default for App {
     fn default() -> Self {
@@ -496,6 +498,9 @@ impl Default for App {
             window: None, renderer: None, world: World::default(),
             keys: HashSet::new(), camera_orbit: 0.6,
             autopilot: true, frame_started: Instant::now(),
+            rendered_frames: 0,
+            smoke_frames: std::env::var("FRUIT_FLY_SMOKE_FRAMES")
+                .ok().and_then(|n| n.parse::<u32>().ok()).filter(|&n| n > 0),
         }
     }
 }
@@ -564,6 +569,12 @@ impl ApplicationHandler for App {
                     if let Err(err) = renderer.draw(&self.world, self.camera_orbit) {
                         eprintln!("Render failed (resizing/recreating swapchains is not implemented): {err}");
                         event_loop.exit();
+                    } else {
+                        self.rendered_frames += 1;
+                        if self.smoke_frames.is_some_and(|max| self.rendered_frames >= max) {
+                            println!("Vulkan smoke: presented {} frames", self.rendered_frames);
+                            event_loop.exit();
+                        }
                     }
                 }
             }
