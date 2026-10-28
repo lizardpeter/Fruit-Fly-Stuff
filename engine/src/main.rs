@@ -336,6 +336,10 @@ impl Renderer {
         self.eye.as_ref().map_or((0.0, 0.0), EyePass::signals)
     }
 
+    fn facet_signals(&self) -> &[f32] {
+        self.eye.as_ref().map_or(&[], EyePass::facet_signals)
+    }
+
     fn captured_eye_frames(&self) -> u64 {
         self.eye.as_ref().map_or(0, EyePass::captured_frames)
     }
@@ -637,7 +641,9 @@ impl ApplicationHandler for App {
                         // render pass and actual copied pixels, not geometry.
                         let (left, right) = self.renderer.as_ref()
                             .map_or((0.0, 0.0), Renderer::visual_signals);
-                        link.send_senses(left, right);
+                        let facets = self.renderer.as_ref()
+                            .map_or(&[][..], Renderer::facet_signals);
+                        link.send_senses(left, right, facets);
                     }
                 }
                 let motor = if self.autopilot {

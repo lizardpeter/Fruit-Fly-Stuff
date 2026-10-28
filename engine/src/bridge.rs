@@ -23,6 +23,7 @@ struct Step {
     seq: u64,
     left: f32,
     right: f32,
+    facets: Vec<f32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -45,7 +46,7 @@ pub enum Event {
     Fault(String),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Request {
     seq: u64,
     left: f32,
@@ -166,6 +167,7 @@ impl NeuralLink {
                 let msg = Step {
                     kind: "step", version: VERSION, seq: request.seq,
                     left: request.left, right: request.right,
+                    facets: request.facets,
                 };
                 let transaction = serde_json::to_writer(&mut input, &msg)
                     .map_err(|e| e.to_string())
@@ -193,10 +195,11 @@ impl NeuralLink {
     }
 
     /// Backpressure: drop extra control requests rather than queuing old sensory frames.
-    pub fn send_senses(&mut self, left: f32, right: f32) {
+    pub fn send_senses(&mut self, left: f32, right: f32, facets: &[f32]) {
         let packet = Request {
             seq: self.next_seq, left: left.clamp(0.0, 1.0),
             right: right.clamp(0.0, 1.0),
+            facets: facets.iter().map(|x| x.clamp(0.0, 1.0)).collect(),
         };
         if self.requests.as_ref().is_some_and(|tx| tx.try_send(packet).is_ok()) {
             self.next_seq += 1;

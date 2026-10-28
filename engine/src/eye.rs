@@ -53,6 +53,7 @@ pub struct EyePass {
     last_signals: (f32, f32),
     captured: u64,
     retina: Retina,
+    facet_values: Vec<f32>,
 }
 
 impl EyePass {
@@ -89,6 +90,7 @@ impl EyePass {
             depth_view, staging, staging_memory, color_format: swapchain_format,
             ready: false, last_signals: (0.0, 0.0), captured: 0,
             retina: Retina::new(camera.width, camera.height)?,
+            facet_values: vec![0.0; fruit_fly_engine::retina::TOTAL_FACETS],
         })
     }
 
@@ -116,6 +118,12 @@ impl EyePass {
             sample.hemispheric_change[0],
             sample.hemispheric_change[1],
         );
+        for (dest, graded) in self.facet_values.iter_mut().zip(sample.graded.iter()) {
+            // Broadband photoreceptor response; R7 UV unavailable from RGB.
+            // These magnitudes are uncalibrated. Send individual facets rather
+            // than collapsing the retina to two binary inputs.
+            *dest = (graded[0] * 5.0).clamp(0.0, 1.0);
+        }
         // Optional snapshot of the fly's OWN view, not the human observer's.
         // Every ~120 frames; no disk I/O unless explicitly configured.
         if self.captured % 120 == 0 {
@@ -131,6 +139,7 @@ impl EyePass {
     }
 
     pub fn signals(&self) -> (f32, f32) { self.last_signals }
+    pub fn facet_signals(&self) -> &[f32] { &self.facet_values }
     pub fn captured_frames(&self) -> u64 { self.captured }
 
     pub unsafe fn record(
