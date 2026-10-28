@@ -13,12 +13,14 @@ if not exist ".venv\Scripts\python.exe" (
 )
 ".venv\Scripts\python.exe" -m pip install -e . || goto :fail
 if /I "%MODE%"=="full" (
+  ".venv\Scripts\python.exe" -m fruit_fly_stuff.whole_brain download --annotations || goto :fail
   if not exist "data\fafb783\processed\metadata.json" (
     echo Preparing full FlyWire graph. This may require multiple GB of RAM.
     ".venv\Scripts\python.exe" -m fruit_fly_stuff.whole_brain download || goto :fail
     ".venv\Scripts\python.exe" -m fruit_fly_stuff.whole_brain prepare || goto :fail
   )
 )
+set "FRUIT_FLY_EYE_SNAPSHOT=%CD%\results\fly-eye.bmp"
 set "FRUIT_FLY_BRAIN_MODE=%MODE%"
 set "FRUIT_FLY_ROOT=%CD%"
 set "FRUIT_FLY_PYTHON=%CD%\.venv\Scripts\python.exe"

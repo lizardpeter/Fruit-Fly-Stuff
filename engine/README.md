@@ -4,7 +4,7 @@ A minimal original 3D engine, not a wrapper around an existing game engine.
 
 ## Neural bridge (Milestone 2)
 
-The Vulkan engine optionally receives neural motor commands from a local Python process and sends landmark-bearing proxies to it. See [Neural Bridge](../docs/NEURAL_BRIDGE.md) and run `Run-Neural-Fly.cmd` (toy) or `Run-Neural-Fly.cmd full`. **This does not capture camera pixels or replicate biologically correct sensory/motor mappings.** Scripted and keyboard modes remain when the bridge is disabled.
+The Vulkan engine optionally receives neural motor commands from a local Python process and sends landmark-bearing proxies to it. See [Neural Bridge](../docs/NEURAL_BRIDGE.md) and run `Run-Neural-Fly.cmd` (toy) or `Run-Neural-Fly.cmd full`. **This now captures real offscreen Vulkan camera pixels and can use source-annotated optic and descending neurons; image-to-neuron mappings and motor effects remain experimental.** Scripted and keyboard modes remain when the bridge is disabled.
 
 ## Current implementation (Milestone 1)
 
@@ -13,7 +13,7 @@ The Vulkan engine optionally receives neural motor commands from a local Python 
 - Real Vulkan graphics pipeline with WGSL compiled to SPIR-V at build time using `naga` (no installed Vulkan SDK or shader compiler required for building).
 - GPU-drawn 3D cube-mesh terrain, markers, stylized fly body, wings, legs and compound-eye placeholders; Vulkan depth image, FPS-targeted redraw, and command-buffer/swapchain presentation.
 - Human-controlled orbiting camera with perspective projection; keyboard motor control.
-- `vision::EyeCamera`: independent **fly-facing camera specification** (position, view-projection, resolution, wide horizontal field of view) and `SensoryEncoder` trait for the eventual visual-to-neural interface. **No image readback or neural connection exists yet.**
+- `vision::EyeCamera`: independent **fly-facing camera specification** (position, view-projection, resolution, wide horizontal field of view) and `SensoryEncoder` trait for the eventual visual-to-neural interface. **A separate offscreen eye render pass and GPU-to-CPU readback now exist; biological calibration is still outstanding.**
 - Headless deterministic world and sensor tests; Windows release build in GitHub Actions.
 
 This first scene is a deliberately **stylized geometric placeholder**, not an anatomical/physical fly and not FlyGym. The autopilot is a scripted example, **not** intelligence emerging from FlyWire data. There are **no modeled flight, collisions, walking mechanics or vision neurons** yet.
@@ -67,3 +67,7 @@ Planned in order:
 The Python whole-brain simulator and Rust 3D world **do not yet communicate**. The fly is visibly shaped like a fly, but its behavior is currently scripted or keyboard-controlled. Real fly eyes are compound eyes, so a simple perspective camera is only a first sensor approximation. Do not call it photorealistic vision or autonomous biological behavior.
 
 The CI verifies compiling and tests on Windows/Linux, but GitHub-hosted runners generally cannot show a physical Vulkan window. A local GPU is required for end-to-end interactive rendering verification.
+
+## Viewing the fly-eye camera
+
+When launched with `Run-Neural-Fly.cmd`, real GPU fly-camera pixels are also saved periodically to `results/fly-eye.bmp` (BMP, 128×96 pixels). This comes from an independent offscreen Vulkan render pass rather than the human spectator camera. The filename can be overridden with the `FRUIT_FLY_EYE_SNAPSHOT` environment variable. The integration workflow tests the output and attaches one BMP image as a downloadable GitHub Actions artifact.

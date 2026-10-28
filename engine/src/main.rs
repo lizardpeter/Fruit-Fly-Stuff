@@ -25,6 +25,8 @@ use winit::{
 };
 
 use fruit_fly_engine::world::{MotorCommand, World};
+mod eye;
+use eye::EyePass;
 use fruit_fly_engine::bridge::{Event as NeuralEvent, NeuralLink};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -50,6 +52,7 @@ struct Renderer {
     depth_image: vk::Image,
     depth_memory: vk::DeviceMemory,
     depth_view: vk::ImageView,
+    eye: Option<EyePass>,
     layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
     instance_buffer: vk::Buffer,
@@ -205,7 +208,7 @@ impl Renderer {
 
             // One persistently reusable CPU-visible storage buffer holds instance
             // transforms and colors. The vertex shader draws all boxes in one call.
-            const MAX_OBJECTS: usize = 256;
+            const MAX_OBJECTS: usize = 512;
             const OBJECT_STRIDE: usize = 80; // mat4x4 + vec4, std430
             let buffer_info = vk::BufferCreateInfo::default()
                 .size((MAX_OBJECTS * OBJECT_STRIDE) as u64)
@@ -318,19 +321,31 @@ impl Renderer {
             let render_done = device.create_semaphore(&semaphore_info, None)?;
             let finished = device.create_fence(
                 &vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED), None)?;
+            let eye = EyePass::new(&instance, &device, physical, format.format)?;
             Ok(Self {
                 _entry: entry, instance, surface_loader, surface, device, queue,
                 swap_loader, swapchain, images, image_views, extent,
-                depth_image, depth_memory, depth_view, layout, pipeline,
+                depth_image, depth_memory, depth_view, eye: Some(eye), layout, pipeline,
                 instance_buffer, instance_memory, descriptor_layout, descriptor_pool, descriptor_set,
                 command_pool, command_buffer, image_ready, render_done, finished,
             })
         }
     }
 
+    fn visual_signals(&self) -> (f32, f32) {
+        self.eye.as_ref().map_or((0.0, 0.0), EyePass::signals)
+    }
+
+    fn captured_eye_frames(&self) -> u64 {
+        self.eye.as_ref().map_or(0, EyePass::captured_frames)
+    }
+
     fn draw(&mut self, world: &World, orbit: f32) -> Result<()> {
         unsafe {
             self.device.wait_for_fences(&[self.finished], true, u64::MAX)?;
+            if let Some(eye) = self.eye.as_mut() {
+                eye.collect(&self.device)?;
+            }
             let (idx, _) = self.swap_loader.acquire_next_image(
                 self.swapchain, u64::MAX, self.image_ready, vk::Fence::null()
             )?;
@@ -404,24 +419,34 @@ impl Renderer {
             let projection = Mat4::perspective_rh(58.0_f32.to_radians(), aspect, 0.05, 100.0);
             let vp = projection * view;
 
-            let objects = world.objects();
+            let (objects, environment_count) = world.objects_with_environment_count();
             if objects.len() > 256 { return Err("scene exceeds instance buffer capacity".into()); }
             // Fence was waited on at the beginning of the frame: the GPU
             // cannot still be reading this host-coherent buffer.
             let mapped = self.device.map_memory(self.instance_memory, 0,
-                (256 * 80) as u64, vk::MemoryMapFlags::empty())? as *mut f32;
+                (512 * 80) as u64, vk::MemoryMapFlags::empty())? as *mut f32;
+            let eye_vp = self.eye.as_ref().expect("eye camera initialized")
+                .camera.view_projection(&world.fly);
             for (index, object) in objects.iter().enumerate() {
-                let matrix = (vp * object.transform).to_cols_array();
-                let mut data = [0.0_f32; 20];
-                data[..16].copy_from_slice(&matrix);
-                data[16..].copy_from_slice(&object.color);
-                std::ptr::copy_nonoverlapping(data.as_ptr(), mapped.add(index * 20), 20);
+                for (view_index, vp_matrix) in [(0, vp), (1, eye_vp)] {
+                    let matrix = (vp_matrix * object.transform).to_cols_array();
+                    let mut data = [0.0_f32; 20];
+                    data[..16].copy_from_slice(&matrix);
+                    data[16..].copy_from_slice(&object.color);
+                    std::ptr::copy_nonoverlapping(
+                        data.as_ptr(), mapped.add((view_index * 256 + index) * 20), 20,
+                    );
+                }
             }
             self.device.unmap_memory(self.instance_memory);
             self.device.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS,
                 self.layout, 0, &[self.descriptor_set], &[]);
             self.device.cmd_draw(cb, 36, objects.len() as u32, 0, 0);
             self.device.cmd_end_rendering(cb);
+            self.eye.as_mut().expect("eye initialized").record(
+                &self.device, cb, self.pipeline, self.layout,
+                self.descriptor_set, environment_count as u32,
+            );
             let end = [vk::ImageMemoryBarrier::default()
                 .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
                 .dst_access_mask(vk::AccessFlags::empty())
@@ -468,6 +493,7 @@ impl Drop for Renderer {
             self.device.destroy_descriptor_set_layout(self.descriptor_layout, None);
             self.device.destroy_buffer(self.instance_buffer, None);
             self.device.free_memory(self.instance_memory, None);
+            if let Some(eye) = self.eye.take() { eye.destroy(&self.device); }
             self.device.destroy_image_view(self.depth_view, None);
             self.device.destroy_image(self.depth_image, None);
             self.device.free_memory(self.depth_memory, None);
@@ -607,7 +633,10 @@ impl ApplicationHandler for App {
                     if self.autopilot && !self.world.paused && self.neural_ready
                         && self.neural_clock >= 1.0 / 30.0 {
                         self.neural_clock -= 1.0 / 30.0;
-                        let (left, right) = self.world.landmark_senses();
+                        // These features come from an independent fly-eye GPU
+                        // render pass and actual copied pixels, not geometry.
+                        let (left, right) = self.renderer.as_ref()
+                            .map_or((0.0, 0.0), Renderer::visual_signals);
                         link.send_senses(left, right);
                     }
                 }
@@ -630,6 +659,11 @@ impl ApplicationHandler for App {
                         event_loop.exit();
                     } else {
                         self.rendered_frames += 1;
+                        if self.rendered_frames % 60 == 0 {
+                            let eye = renderer.visual_signals();
+                            println!("Fly-eye GPU pixels captured={} left={:.3} right={:.3}",
+                                renderer.captured_eye_frames(), eye.0, eye.1);
+                        }
                         if self.smoke_frames.is_some_and(|max| self.rendered_frames >= max) {
                             println!("Vulkan smoke: presented {} frames", self.rendered_frames);
                             event_loop.exit();

@@ -11,12 +11,12 @@ The Rust renderer and Python neural worker are two **local** processes. They com
 
 ## What is wired
 
-3D fly position + heading → two geometric landmark-bearing signals → Python spiking-network input neurons → measured output spikes → Rust motor translator → fly position and heading.
+3D fly position + heading → two visual feature signals from actual head-mounted Vulkan camera pixels → Python spiking-network input neurons → measured output spikes → Rust motor translator → fly position and heading.
 
 - **Toy mode:** 4 synthetic neurons with two actual directed connections, serving as an easy integration test.
-- **Full mode:** every neuron and all 15.1 million directed neuron pairs from the unfiltered FlyWire FAFB v783 sparse graph. To make the closed software loop testable, two strong **nonoverlapping directed edges** are selected as artificial left/right input/output probe pairs. Selection is based on graph topology, not anatomical classification.
-- The visual signals come from a simple bearing-and-distance calculation for two colored world landmarks; **the Vulkan fly-eye camera does not yet capture visual pixels.**
-- The full graph has unvalidated all-positive normalized weights. This is not a model of biological sensory or motor pathways, fly-like autonomy, or consciousness.
+- **Full mode:** every neuron and all 15.1 million directed neuron pairs from the unfiltered FlyWire FAFB v783 sparse graph. To make the closed software loop testable, the default is **biologically annotated `optic` and `descending` neuron groups**, separated by source-provided left/right labels. We stimulate a limited subset of optic neurons and read descending spikes; both steps are uncalibrated. The previous strongest-edge probes remain available as a software baseline with `--mapping probes`. Selection is based on graph topology, not anatomical classification.
+- The visual features come from an actual offscreen render pass into a fly-head camera, not hand-calculated landmark direction. The pixel feature extractor is artificial and does **not** implement compound-eye retinotopy.
+- FlyWire classifications identify optic and descending neurons, but the actual pixel injection and spike-to-movement interpretation are experimental; the graph still has unvalidated all-positive normalized weights. This is not a model of biological sensory or motor pathways, fly-like autonomy, or consciousness.
 - The spiking activity from the actual neural model controls movement in the Rust world; no motor spike values are fabricated by the bridge.
 
 ## Checkpoints, controls and timing
@@ -30,9 +30,13 @@ The Rust renderer and Python neural worker are two **local** processes. They com
 
 - `src/fruit_fly_stuff/neural_bridge.py`: validates protocol and state, runs the real `WholeBrain` or 4-neuron synthetic circuit, checkpoints progress.
 - `engine/src/bridge.rs`: spawns Python once, moves JSON messages on a worker thread, enforces version/sequence fields and avoids blocking the Vulkan loop.
-- `engine/src/world.rs`: generates two landmark-bearing **proxy** sensations.
+- `engine/src/eye.rs`: renders and reads the fly's independent Vulkan eye; `engine/src/vision.rs`: extracts left/right pixel features.
 - `engine/src/main.rs`: decodes returned neural spikes into forward/yaw commands and updates the world.
 
 ## Next biological milestone
 
-Implement a separate head-mounted Vulkan render-to-texture eye, sample its pixels, map outputs to anatomically justified optic-lobe neuron IDs, and interpret validated descending motor pathways. Compare real-connectome behavior with shuffled wiring and disconnected controls. GPU computation of the neural graph is still future work; the current full graph runs on the CPU.
+Improve the current head-mounted camera into compound-eye optic sampling, use measured retinotopic mappings rather than arbitrary within-class neuron selections, and validate which descending neuron signals actually correspond to motor behavior. Compare real-connectome behavior with shuffled wiring and disconnected controls. GPU computation of the neural graph is still future work; the current full graph runs on the CPU.
+
+### Inspect the fly's own view
+
+The Windows neural launcher sets `FRUIT_FLY_EYE_SNAPSHOT` to `results/fly-eye.bmp`. While the world is open, the engine writes a Windows-readable 128×96 screenshot of the **fly-mounted camera** roughly every 120 rendered frames. Open it with Windows Photos or Paint. The observer's orbit angle does not affect the eye camera. This is a single perspective view, not a compound-eye reconstruction.

@@ -63,12 +63,29 @@ jobs:
             VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
             FRUIT_FLY_SMOKE_FRAMES=240 \
             FRUIT_FLY_BRAIN_MODE=toy \
+            FRUIT_FLY_EYE_SNAPSHOT="$GITHUB_WORKSPACE/results/fly-eye.bmp" \
             FRUIT_FLY_PYTHON=python \
             FRUIT_FLY_ROOT="$GITHUB_WORKSPACE" \
             PYTHONPATH="$GITHUB_WORKSPACE/src" \
             ./engine/target/debug/fruit-fly-engine 2>&1 | tee "$RUNNER_TEMP/bridge-log.txt"
           grep -q "Neural bridge ready: toy with 4 neurons" "$RUNNER_TEMP/bridge-log.txt"
           grep -q "Neural step" "$RUNNER_TEMP/bridge-log.txt"
+          grep -Eq "Fly-eye GPU pixels captured=[1-9][0-9]*" "$RUNNER_TEMP/bridge-log.txt"
+          python - <<'PY'
+          from pathlib import Path
+          image = Path('results/fly-eye.bmp').read_bytes()
+          assert image[:2] == b'BM'
+          assert int.from_bytes(image[18:22], 'little') == 128
+          assert int.from_bytes(image[22:26], 'little') == 96
+          assert len(image) == 54 + 128 * 96 * 4
+          print('Real Vulkan fly-eye screenshot saved and validated.')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fly-eye-camera-snapshot
+          path: results/fly-eye.bmp
+          if-no-files-found: error
+          retention-days: 30
 
   windows-release:
     runs-on: windows-latest
