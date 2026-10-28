@@ -99,7 +99,8 @@ impl Renderer {
                         let present = surface_loader.get_physical_device_surface_support(
                             physical, i as u32, surface
                         ).ok()?;
-                        if q.queue_flags.contains(vk::QueueFlags::GRAPHICS) && present {
+                        if q.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+                            && q.queue_flags.contains(vk::QueueFlags::COMPUTE) && present {
                             Some((physical, i as u32))
                         } else { None }
                     })

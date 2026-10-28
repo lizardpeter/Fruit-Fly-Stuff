@@ -121,7 +121,10 @@ class BrainAdapter:
             "left_probe": link(self.left),
             "right_probe": link(self.right),
             "mapping": "synthetic toy circuit" if self.mode == "toy" else
-                ("classified optic-lobe inputs and descending-neuron readout; "
+                ("source-identified L1/L2 retinotopic column inputs and descending readout; "
+                 "camera-to-column and motor mappings are NOT biologically calibrated"
+                 if self.mapping_name == "retinotopic" else
+                 "classified optic-lobe inputs and descending-neuron readout; "
                  "pixel-to-neuron and motor mappings are NOT biologically calibrated"
                  if self.groups is not None else
                  "strongest disjoint FlyWire neuron-pair probes (not anatomical motor/sensory assignments)"),

@@ -133,6 +133,9 @@ def load_mapping(path: Path, cache_dir: Path):
         obj.get("connectome_sha256") != sha256_file(cache_dir / "adjacency.npz")):
         raise ValueError("retina mapping incompatible with this graph/version")
     _, roots, _ = load_graph(cache_dir)
+    source_file = cache_dir.parent / "column_assignment.csv.gz"
+    if not source_file.is_file() or obj.get("source_column_sha256") != sha256_file(source_file):
+        raise ValueError("retina source column checksum does not match the compiled mapping")
     rows = obj["entries"]
     if not rows:
         raise ValueError("empty retina mapping")

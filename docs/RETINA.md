@@ -65,9 +65,7 @@ an exploratory hypothesis. Fly photoreceptors frequently use graded
 signals, but the current whole graph uses a simplified spike-threshold
 model. The motor decoder remains an uncalibrated placeholder.
 
-The eye image is GPU rendered; **the optical sampling, temporal filtering
-and entire neural network currently run on CPU**. Vulkan compute acceleration
-can be implemented separately without altering the mapping format.
+The eye image is GPU rendered; **Vulkan compute samples all 1,442 projected facet locations** on the GPU. Rust performs stateful receptor/adaptation updates on CPU after reading back only the facet RGB values. The Python whole-connectome neural propagation remains CPU. These are not yet benchmarked against GPU compute alternatives.
 
 Sources: https://codex.flywire.ai/api/download ;
 https://github.com/flyconnectome/flywire_annotations ;

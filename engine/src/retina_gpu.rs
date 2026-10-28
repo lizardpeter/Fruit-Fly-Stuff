@@ -169,8 +169,9 @@ impl GpuFacetSampler {
             samples.push([values[0], values[1], values[2]]);
         }
         device.unmap_memory(self.output_memory);
-        if samples.iter().flatten().any(|x| !x.is_finite() || *x < -0.001 || *x > 1.001) {
-            return Err("invalid GPU facet samples".into());
+        if samples.iter().flatten().any(|x| !x.is_finite() || *x < -0.001 || *x > 1.001)
+            || samples.iter().all(|rgb| rgb.iter().all(|x| x.abs() < 0.0001)) {
+            return Err("invalid or empty Vulkan facet samples".into());
         }
         Ok(samples)
     }
