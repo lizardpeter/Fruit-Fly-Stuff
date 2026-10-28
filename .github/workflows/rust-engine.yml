@@ -92,7 +92,7 @@ jobs:
             ./engine/target/debug/fruit-fly-engine 2>&1 | tee "$RUNNER_TEMP/black-eye-log.txt"
           grep -q "Retina GPU/CPU parity PASS:" "$RUNNER_TEMP/black-eye-log.txt"
           grep -q "Vulkan smoke: presented 5 frames" "$RUNNER_TEMP/black-eye-log.txt"
-      - name: World visual event: verify real GPU retina responds to light onset and offset
+      - name: "World visual event: verify real GPU retina responds to light onset and offset"
         run: |
           timeout 65s xvfb-run -a env \
             VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
