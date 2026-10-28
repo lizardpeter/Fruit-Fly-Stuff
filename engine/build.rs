@@ -6,7 +6,7 @@ fn main() {
     let module = naga::front::wgsl::parse_str(&src).expect("parse WGSL shader");
     let info = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
-        naga::valid::Capabilities::PUSH_CONSTANT,
+        naga::valid::Capabilities::empty(),
     ).validate(&module).expect("validate shader");
     let dest = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     for (entry, stage, file) in [
