@@ -274,7 +274,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.save_every < 1:
         parser.error("--save-every must be >= 1")
-    filename = (f"bridge-full-{args.mapping}.npz" if args.mode == "full"
+    filename = (("bridge-full-retinotopic-v2.npz" if args.mapping == "retinotopic"
+                 else f"bridge-full-{args.mapping}.npz") if args.mode == "full"
                 else "bridge-toy.npz")
     checkpoint = args.checkpoint or Path("state") / filename
     raise SystemExit(serve(args.mode, args.cache_dir, checkpoint, args.save_every, args.mapping))

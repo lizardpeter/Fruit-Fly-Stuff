@@ -100,3 +100,7 @@ The engine now schedules redraws against the previous frame's time instead of ca
 ### Projected facet layout v2
 
 The original axial-to-pixel formula accidentally used a denominator three times larger than the lattice extent, so each eye sampled an unnecessarily narrow band and missed much of the camera image, including parts of the forward center. The v2 normalization covers nearly the full source half-image (with a small edge margin). The facet IDs and FAFB root IDs are unchanged, but the **pixel-to-facet geometry is different**, so the compiled mapping layout ID is bumped to `two-721-projected-hex-halves-v2`; old v1 mapping manifests must be regenerated, and mismatched neural checkpoints will be rejected. This is still a projected approximation, not measured compound-eye calibration.
+
+### v2 upgrade without overwriting old neural state
+
+The new retinal layout saves to `state/bridge-full-retinotopic-v2.npz`. Earlier `state/bridge-full-retinotopic.npz` files remain untouched and cannot be silently restored with different sensory geometry. The new v2 file still has mapping fingerprints and will reject incompatible recalibrations. Other controller filenames are unchanged.
