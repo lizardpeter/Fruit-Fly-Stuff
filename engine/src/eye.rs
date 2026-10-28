@@ -223,35 +223,44 @@ impl EyePass {
             layout, 0, &[descriptor], &[]);
         device.cmd_draw(cb, 36, objects, 0, INSTANCES_PER_VIEW);
         device.cmd_end_rendering(cb);
-        let to_transfer = [vk::ImageMemoryBarrier::default()
-            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
-            .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .image(self.color).subresource_range(cr)];
-        device.cmd_pipeline_barrier(cb, vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            vk::PipelineStageFlags::TRANSFER, vk::DependencyFlags::empty(),
-            &[], &[], &to_transfer);
-        let region = [vk::BufferImageCopy::default().buffer_offset(0)
-            .buffer_row_length(0).buffer_image_height(0)
-            .image_subresource(vk::ImageSubresourceLayers::default()
-                .aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1))
-            .image_extent(vk::Extent3D { width: self.camera.width,
-                height: self.camera.height, depth: 1 })];
-        device.cmd_copy_image_to_buffer(cb, self.color, vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-            self.staging, &region);
-        let buffer_barrier = [vk::BufferMemoryBarrier::default()
-            .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-            .dst_access_mask(vk::AccessFlags::HOST_READ)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .buffer(self.staging).offset(0).size(vk::WHOLE_SIZE)];
-        device.cmd_pipeline_barrier(cb, vk::PipelineStageFlags::TRANSFER,
-            vk::PipelineStageFlags::HOST, vk::DependencyFlags::empty(), &[],
-            &buffer_barrier, &[]);
-        self.gpu_sampler.record(device, cb, self.color);
+        // Full-image GPU->host copy is expensive and only needed for BMP
+        // snapshots or the once-per-run parity diagnostic. Otherwise the
+        // compute shader reads the color attachment directly.
+        let copy_pixels = (std::env::var("FRUIT_FLY_EYE_SNAPSHOT").is_ok()
+            && self.captured % 120 == 0)
+            || (std::env::var_os("FRUIT_FLY_RETINA_VERIFY_GPU").is_some()
+                && self.captured == 0);
+        if copy_pixels {
+            let to_transfer = [vk::ImageMemoryBarrier::default()
+                .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+                .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(self.color).subresource_range(cr)];
+            device.cmd_pipeline_barrier(cb, vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::PipelineStageFlags::TRANSFER, vk::DependencyFlags::empty(),
+                &[], &[], &to_transfer);
+            let region = [vk::BufferImageCopy::default().buffer_offset(0)
+                .buffer_row_length(0).buffer_image_height(0)
+                .image_subresource(vk::ImageSubresourceLayers::default()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1))
+                .image_extent(vk::Extent3D { width: self.camera.width,
+                    height: self.camera.height, depth: 1 })];
+            device.cmd_copy_image_to_buffer(cb, self.color, vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                self.staging, &region);
+            let buffer_barrier = [vk::BufferMemoryBarrier::default()
+                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                .dst_access_mask(vk::AccessFlags::HOST_READ)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .buffer(self.staging).offset(0).size(vk::WHOLE_SIZE)];
+            device.cmd_pipeline_barrier(cb, vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::HOST, vk::DependencyFlags::empty(), &[],
+                &buffer_barrier, &[]);
+        }
+        self.gpu_sampler.record(device, cb, self.color, copy_pixels);
         self.ready = true;
     }
 
