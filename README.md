@@ -4,7 +4,19 @@ An open-source project exploring **persistent, experience-dependent learning** i
 
 > **Prototype status:** This version implements a **synthetic three-neuron circuit**, not the full fruit fly brain. It validates spiking dynamics, reward-driven learning, and persistent memory before we attempt biological reconstruction.
 
-## Two independent simulation tracks
+## Experiment C — custom Rust + Vulkan 3D fly world
+
+A **separate original 3D engine** now lives in [`engine/`](engine/) and does **not** use Unity, Unreal, Bevy, wgpu, or FlyGym. It uses raw [Vulkan bindings via ash](https://github.com/ash-rs/ash), native [winit](https://github.com/rust-windowing/winit) window events, and custom Rust world/scene/renderer code.
+
+**Initial milestone:** Vulkan 1.3 GPU render pipeline and depth buffer, a stylized articulated fly in a small 3D arena, a camera for *the human observer*, keyboard steering, a clearly labeled scripted autopilot, and a **separate fly-eye camera/sensory encoding interface**. This is still a placeholder model, not an anatomically accurate fly, neural control, or captured visual input.
+
+- [Detailed engine setup and status](engine/README.md)
+- [Windows Rust build/test Actions](https://github.com/lizardpeter/Fruit-Fly-Stuff/actions/workflows/rust-engine.yml)
+- On Windows, run `Run-Vulkan-World.cmd` from the repository, or download the compiled Windows .exe from a successful Actions run.
+
+**Important:** rendering is accelerated by Vulkan, but the existing whole-connectome **neural computation remains Python/CPU**. GPU neural simulation and image-to-neuron wiring are future, independent features.
+
+## Earlier simulation experiments
 
 **A. [Whole FlyWire connectome on your PC](docs/WHOLE_BRAIN.md):** downloads FAFB v783, keeps all 139,255 neuron IDs and all neuron-pair connections in the *unfiltered Codex contact-count table*, then runs a compact sparse mathematical model. It resumes its voltages and spikes from a local checkpoint. **This does not yet model realistic fly physiology, plasticity, behavior or consciousness.**
 

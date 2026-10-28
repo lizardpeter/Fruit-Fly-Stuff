@@ -1,0 +1,49 @@
+name: Rust Vulkan Engine
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "engine/**"
+      - "Run-Vulkan-World.cmd"
+      - ".github/workflows/rust-engine.yml"
+  pull_request:
+    paths:
+      - "engine/**"
+      - "Run-Vulkan-World.cmd"
+      - ".github/workflows/rust-engine.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate build and test Rust logic
+        run: |
+          cargo check --manifest-path engine/Cargo.toml --all-targets
+          cargo test --manifest-path engine/Cargo.toml
+
+  windows-release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate and test Rust code
+        run: |
+          cargo check --manifest-path engine/Cargo.toml --all-targets
+          cargo test --manifest-path engine/Cargo.toml
+      - name: Build Windows executable
+        run: cargo build --release --manifest-path engine/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fruit-fly-vulkan-windows
+          path: engine/target/release/fruit-fly-engine.exe
+          if-no-files-found: error
+          retention-days: 30

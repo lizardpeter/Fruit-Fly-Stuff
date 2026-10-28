@@ -1,0 +1,21 @@
+[package]
+name = "fruit-fly-engine"
+version = "0.1.0"
+edition = "2021"
+description = "From-scratch Rust/Vulkan 3D world and fly sensor interface"
+license = "MIT"
+build = "build.rs"
+
+[dependencies]
+ash = "0.38"
+ash-window = "0.13"
+winit = { version = "0.30", features = ["rwh_06"] }
+raw-window-handle = "0.6"
+glam = "0.30"
+
+[build-dependencies]
+naga = { version = "30", features = ["wgsl-in", "spv-out"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
