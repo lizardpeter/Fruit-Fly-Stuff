@@ -4,6 +4,10 @@ An open-source project exploring **persistent, experience-dependent learning** i
 
 > **Prototype status:** This version implements a **synthetic three-neuron circuit**, not the full fruit fly brain. It validates spiking dynamics, reward-driven learning, and persistent memory before we attempt biological reconstruction.
 
+## Experiment D — neural network controls the Vulkan fly (prototype)
+
+**[Link the 3D fly and neural network](docs/NEURAL_BRIDGE.md):** Rust and Python now exchange geometric landmark inputs and measured neuron spikes through a local JSON-lines bridge. Double-click `Run-Neural-Fly.cmd` (fast 4-neuron toy), or use `Run-Neural-Fly.cmd full` for the **entire FlyWire 139,255-neuron graph**. The full graph runs genuine sparse propagation but currently uses **artificial topological probes**, not identified biological sensory/motor circuits. The fly's own rendered eye-camera is **not yet connected**.
+
 ## Experiment C — custom Rust + Vulkan 3D fly world
 
 A **separate original 3D engine** now lives in [`engine/`](engine/) and does **not** use Unity, Unreal, Bevy, wgpu, or FlyGym. It uses raw [Vulkan bindings via ash](https://github.com/ash-rs/ash), native [winit](https://github.com/rust-windowing/winit) window events, and custom Rust world/scene/renderer code.
