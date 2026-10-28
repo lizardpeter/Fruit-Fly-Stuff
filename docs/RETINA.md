@@ -76,3 +76,7 @@ https://www.nature.com/articles/s41586-025-09276-5 .
 ### ON/OFF retinal transients (fix)
 
 The previous sampler rectified all decreases in luminance to zero, losing dark edges and leaving L2 unable to receive a separate OFF signal. The updated bridge transmits two **1,442-element** arrays: positive transients (ON) and negative transients (OFF). The experimental mapping routes L1-class neurons from ON and L2-class neurons from OFF, reflecting the better-known upstream ON/OFF pathway distinction, while explicitly *not* claiming to simulate the true graded L1/L2 membrane potential or validated retinal wiring. Strongly static scenes still adapt: this is not a complete persistent luminance or motion model.
+
+### Timebase correction
+
+The photoreceptor response now advances using elapsed world-simulation time, not a hard-coded 60 Hz assumption. Pausing the world freezes receptor/adaptation state. This improves consistency across computers but still does not establish measured fly kinetics.
