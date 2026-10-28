@@ -46,6 +46,9 @@ pub struct RetinaSample {
     /// Coarse left/right readout for legacy two-channel neural bridge;
     /// NOT the proper per-column connectome mapping.
     pub hemispheric_change: [f32; 2],
+    /// R1-R6 decrement (OFF) response, independent of the ON graded array.
+    /// These are phenomenological transient features, not L2 voltages.
+    pub off_contrast: Vec<f32>,
     pub uv_available: bool,
     pub facets: usize,
 }
@@ -152,6 +155,7 @@ impl Retina {
         let fast_alpha = 1.0 - (-dt_seconds / 0.025).exp();
         let slow_alpha = 1.0 - (-dt_seconds / 0.200).exp();
         let mut output = Vec::with_capacity(TOTAL_FACETS);
+        let mut off_contrast = Vec::with_capacity(TOTAL_FACETS);
         let mut sum = [0.0; 2];
         for (i, facet) in self.facets.iter().copied().enumerate() {
             let input = spectral_proxy(rgb[i], facet.pale);
@@ -164,13 +168,19 @@ impl Retina {
                 // Rectified temporal contrast after slow light adaptation.
                 graded[c] = (self.fast[i][c] - self.adaptation[i][c]).max(0.0).min(1.0);
             }
-            // Aggregate broadband R1–6 change for legacy bridge.
+            // Signed luminance contrast is divided into independent
+            // increment and decrement channels. Previously negative
+            // contrast was thrown away, making dark edges invisible.
+            let off = (self.adaptation[i][0] - self.fast[i][0]).clamp(0.0, 1.0);
+            off_contrast.push(off);
+            // Aggregate broadband ON for the legacy two-channel bridge.
             sum[facet.side.code() as usize] += graded[0];
             output.push(graded);
         }
         self.initialized = true;
         Ok(RetinaSample {
             graded: output,
+            off_contrast,
             hemispheric_change: [
                 (sum[0] / FACETS_PER_EYE as f32 * 5.0).min(1.0),
                 (sum[1] / FACETS_PER_EYE as f32 * 5.0).min(1.0),
@@ -232,6 +242,21 @@ mod tests {
         let a = from_pixels.step(&frame,0.016).unwrap();
         let b = from_facets.step_rgb_samples(&rgb,0.016).unwrap();
         assert_eq!(a.graded, b.graded);
+        assert_eq!(a.off_contrast, b.off_contrast);
+    }
+    #[test]
+    fn light_offset_triggers_off_not_on_and_channels_are_separated() {
+        let mut r = Retina::new(128, 96).unwrap();
+        let white = image([255; 4], [255; 4]);
+        let black = image([0; 4], [0; 4]);
+        for _ in 0..100 { r.step(&white, 0.016).unwrap(); }
+        let offset = r.step(&black, 0.016).unwrap();
+        assert!(offset.off_contrast[0] > 0.05);
+        assert!(offset.graded[0][0] < 0.001);
+        for _ in 0..100 { r.step(&black, 0.016).unwrap(); }
+        let onset = r.step(&white, 0.016).unwrap();
+        assert!(onset.graded[0][0] > 0.05);
+        assert!(onset.off_contrast[0] < 0.001);
     }
     #[test]
     fn rejects_invalid_resolution_and_time() {

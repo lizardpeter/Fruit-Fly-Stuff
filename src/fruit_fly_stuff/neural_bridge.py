@@ -60,6 +60,33 @@ def strongest_disjoint_edges(graph) -> tuple[tuple[int, int], tuple[int, int]]:
     raise ValueError("no two disjoint directed connections in the candidate set")
 
 
+def route_visual_channels(neurons, facet_ids, cell_types, on, off, threshold=0.04):
+    """EXPERIMENTAL ON→L1 and OFF→L2 pathway abstraction.
+
+    L1/L2 project preferentially into ON/OFF motion pathways, but their
+    actual graded membrane polarities are more nuanced. This function
+    stimulates point-neuron indices; it is not a measured L1/L2 transfer.
+    """
+    if on is None or off is None:
+        raise ValueError("retinotopic mode needs both ON and OFF facet arrays")
+    on = np.asarray(on, dtype=np.float32)
+    off = np.asarray(off, dtype=np.float32)
+    for name, value in (("ON", on), ("OFF", off)):
+        if (value.shape != (FACETS,) or not np.all(np.isfinite(value))
+            or np.any(value < 0) or np.any(value > 1)):
+            raise ValueError(f"{name} needs 1442 finite facet signals in [0,1]")
+    neuron_indices = np.asarray(neurons, dtype=np.int32)
+    positions = np.asarray(facet_ids, dtype=np.int32)
+    types = np.asarray(cell_types)
+    if (len(neuron_indices) != len(positions) or len(types) != len(positions)
+        or np.any(positions < 0) or np.any(positions >= FACETS)
+        or not np.all(np.isin(types, ["L1", "L2"]))):
+        raise ValueError("only mapped L1 and L2 cells are supported")
+    selected = ((types == "L1") & (on[positions] >= threshold)) | (
+        (types == "L2") & (off[positions] >= threshold))
+    return np.unique(neuron_indices[selected])
+
+
 class BrainAdapter:
     def __init__(self, mode: str, cache_dir: Path, checkpoint: Path, mapping: str = "classified"):
         self.mode = mode
@@ -90,6 +117,9 @@ class BrainAdapter:
                 if mapping == "retinotopic":
                     neurons, facets, info = load_mapping(cache_dir / "retinotopy.json", cache_dir)
                     self.retinotopic_neurons, self.facet_ids = neurons, facets
+                    self.retinotopic_types = np.asarray(
+                        [row["type"] for row in info["entries"]], dtype="U16",
+                    )
                     self.mapping_metadata = {
                         "kind": info["mapping_kind"],
                         "mapped_neurons": info["mapped_neurons"],
@@ -132,7 +162,7 @@ class BrainAdapter:
             "retinotopy": self.mapping_metadata,
         }
 
-    def step(self, sequence: int, left: float, right: float, facets=None) -> dict:
+    def step(self, sequence: int, left: float, right: float, facets=None, facets_off=None) -> dict:
         for x in (left, right):
             if not np.isfinite(x) or x < 0 or x > 1:
                 raise ValueError("left and right must be finite in [0, 1]")
@@ -140,15 +170,10 @@ class BrainAdapter:
             if self.mapping_name == "retinotopic":
                 if facets is None:
                     raise ValueError("retinotopic mode requires exactly 1442 facet signals")
-                signals = np.asarray(facets, dtype=np.float32)
-                if (signals.shape != (FACETS,) or not np.all(np.isfinite(signals))
-                    or np.any(signals < 0) or np.any(signals > 1)):
-                    raise ValueError("facet signals must be 1442 finite values in [0,1]")
-                # Crucial: the connection between virtual facet index and
-                # real L1/L2 column is an EXPLICITLY UNCALIBRATED fit unless
-                # a user calibration was provided. Only neuron IDs are real.
-                chosen = signals[self.facet_ids] >= 0.04
-                excite = np.unique(self.retinotopic_neurons[chosen])
+                excite = route_visual_channels(
+                    self.retinotopic_neurons, self.facet_ids,
+                    self.retinotopic_types, facets, facets_off,
+                )
             else:
                 # Old broad-class software baseline, not accurate retinotopy.
                 excite_parts = []
@@ -217,7 +242,7 @@ def serve(mode: str, cache_dir: Path, checkpoint: Path, save_every: int = 300, m
                     raise ValueError("sequence must be a strictly increasing integer")
                 left = float(msg["left"])
                 right = float(msg["right"])
-                answer = adapter.step(seq, left, right, msg.get("facets"))
+                answer = adapter.step(seq, left, right, msg.get("facets"), msg.get("facets_off"))
                 previous_seq = seq
                 print(json.dumps(answer), flush=True)
                 if adapter.brain.steps % save_every == 0:

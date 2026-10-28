@@ -56,6 +56,7 @@ pub struct EyePass {
     retina: Retina,
     gpu_sampler: GpuFacetSampler,
     facet_values: Vec<f32>,
+    facet_off_values: Vec<f32>,
 }
 
 impl EyePass {
@@ -95,6 +96,7 @@ impl EyePass {
             ready: false, last_signals: (0.0, 0.0), captured: 0,
             retina, gpu_sampler,
             facet_values: vec![0.0; fruit_fly_engine::retina::TOTAL_FACETS],
+            facet_off_values: vec![0.0; fruit_fly_engine::retina::TOTAL_FACETS],
         })
     }
 
@@ -129,6 +131,9 @@ impl EyePass {
             // than collapsing the retina to two binary inputs.
             *dest = (graded[0] * 5.0).clamp(0.0, 1.0);
         }
+        for (dest, off) in self.facet_off_values.iter_mut().zip(sample.off_contrast.iter()) {
+            *dest = (off * 5.0).clamp(0.0, 1.0);
+        }
         // Optional snapshot of the fly's OWN view, not the human observer's.
         // Every ~120 frames; no disk I/O unless explicitly configured.
         if self.captured % 120 == 0 {
@@ -145,6 +150,7 @@ impl EyePass {
 
     pub fn signals(&self) -> (f32, f32) { self.last_signals }
     pub fn facet_signals(&self) -> &[f32] { &self.facet_values }
+    pub fn facet_off_signals(&self) -> &[f32] { &self.facet_off_values }
     pub fn captured_frames(&self) -> u64 { self.captured }
 
     pub unsafe fn record(

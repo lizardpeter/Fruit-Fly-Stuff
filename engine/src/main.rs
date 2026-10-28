@@ -342,6 +342,10 @@ impl Renderer {
         self.eye.as_ref().map_or(&[], EyePass::facet_signals)
     }
 
+    fn facet_off_signals(&self) -> &[f32] {
+        self.eye.as_ref().map_or(&[], EyePass::facet_off_signals)
+    }
+
     fn captured_eye_frames(&self) -> u64 {
         self.eye.as_ref().map_or(0, EyePass::captured_frames)
     }
@@ -645,7 +649,9 @@ impl ApplicationHandler for App {
                             .map_or((0.0, 0.0), Renderer::visual_signals);
                         let facets = self.renderer.as_ref()
                             .map_or(&[][..], Renderer::facet_signals);
-                        link.send_senses(left, right, facets);
+                        let off = self.renderer.as_ref()
+                            .map_or(&[][..], Renderer::facet_off_signals);
+                        link.send_senses(left, right, facets, off);
                     }
                 }
                 let motor = if self.autopilot {

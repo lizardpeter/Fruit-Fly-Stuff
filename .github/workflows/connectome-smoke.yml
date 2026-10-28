@@ -99,7 +99,8 @@ jobs:
           b=BrainAdapter('full',cache,Path('state/retina-full-ci.npz'),mapping='retinotopic')
           stimulus=np.zeros(1442,dtype=np.float32)
           stimulus[int(facets[0])]=1.0
-          response=b.step(0,0,0,stimulus.tolist())
+          quiet=np.zeros(1442,dtype=np.float32)
+          response=b.step(0,0,0,stimulus.tolist(),quiet.tolist())
           print('Per-facet FlyWire response:',response)
           assert response['active']>0
           assert b.hello()['retinotopy']['kind']=='UNVALIDATED_axial_fit'
