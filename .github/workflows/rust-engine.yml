@@ -1,0 +1,73 @@
+name: Rust Vulkan Engine
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "engine/**"
+      - "Run-Vulkan-World.cmd"
+      - ".github/workflows/rust-engine.yml"
+  pull_request:
+    paths:
+      - "engine/**"
+      - "Run-Vulkan-World.cmd"
+      - ".github/workflows/rust-engine.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate build and test Rust logic
+        run: |
+          cargo check --manifest-path engine/Cargo.toml --all-targets
+          cargo test --manifest-path engine/Cargo.toml
+
+
+  linux-vulkan-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install headless X11 and Mesa Vulkan CPU driver
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb libxkbcommon-x11-0 libvulkan1 mesa-vulkan-drivers vulkan-tools
+      - name: Verify the software Vulkan ICD
+        run: |
+          ls -l /usr/share/vulkan/icd.d
+          VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json vulkaninfo --summary
+      - name: Build native window executable
+        run: cargo build --manifest-path engine/Cargo.toml
+      - name: Present five 3D Vulkan frames in virtual X11
+        run: |
+          timeout 45s xvfb-run -a env \
+            VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
+            FRUIT_FLY_SMOKE_FRAMES=5 \
+            ./engine/target/debug/fruit-fly-engine
+
+  windows-release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate and test Rust code
+        run: |
+          cargo check --manifest-path engine/Cargo.toml --all-targets
+          cargo test --manifest-path engine/Cargo.toml
+      - name: Build Windows executable
+        run: cargo build --release --manifest-path engine/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fruit-fly-vulkan-windows
+          path: engine/target/release/fruit-fly-engine.exe
+          if-no-files-found: error
+          retention-days: 30
