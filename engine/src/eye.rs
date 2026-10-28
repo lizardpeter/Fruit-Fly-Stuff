@@ -197,7 +197,13 @@ impl EyePass {
         device.cmd_pipeline_barrier(cb, vk::PipelineStageFlags::TOP_OF_PIPE,
             vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
             vk::DependencyFlags::empty(), &[], &[], &barriers);
-        let sky = vk::ClearValue { color: vk::ClearColorValue { float32: [0.07, 0.12, 0.20, 1.0] }};
+        // CI-only blacked-out eye permits checking the *actual Vulkan*
+        // all-zero compute result against the CPU optical reference.
+        let blackout = std::env::var_os("FRUIT_FLY_SMOKE_BLACK_EYE").is_some();
+        let sky = vk::ClearValue { color: vk::ClearColorValue {
+            float32: if blackout { [0.0, 0.0, 0.0, 1.0] }
+                else { [0.07, 0.12, 0.20, 1.0] }
+        }};
         let depth_clear = vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue {
             depth: 1.0, stencil: 0
         }};
@@ -221,7 +227,7 @@ impl EyePass {
         device.cmd_set_scissor(cb, 0, &[vk::Rect2D::default().extent(extent)]);
         device.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS,
             layout, 0, &[descriptor], &[]);
-        device.cmd_draw(cb, 36, objects, 0, INSTANCES_PER_VIEW);
+        device.cmd_draw(cb, 36, if blackout { 0 } else { objects }, 0, INSTANCES_PER_VIEW);
         device.cmd_end_rendering(cb);
         // Full-image GPU->host copy is expensive and only needed for BMP
         // snapshots or the once-per-run parity diagnostic. Otherwise the

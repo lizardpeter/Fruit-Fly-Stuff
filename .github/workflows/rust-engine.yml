@@ -82,6 +82,16 @@ jobs:
           assert len(image) == 54 + 128 * 96 * 4
           print('Real Vulkan fly-eye screenshot saved and validated.')
           PY
+      - name: Black-screen regression - darkness is valid neural input
+        run: |
+          timeout 45s xvfb-run -a env \
+            VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
+            FRUIT_FLY_SMOKE_FRAMES=5 \
+            FRUIT_FLY_SMOKE_BLACK_EYE=1 \
+            FRUIT_FLY_RETINA_VERIFY_GPU=1 \
+            ./engine/target/debug/fruit-fly-engine 2>&1 | tee "$RUNNER_TEMP/black-eye-log.txt"
+          grep -q "Retina GPU/CPU parity PASS:" "$RUNNER_TEMP/black-eye-log.txt"
+          grep -q "Vulkan smoke: presented 5 frames" "$RUNNER_TEMP/black-eye-log.txt"
       - uses: actions/upload-artifact@v4
         with:
           name: fly-eye-camera-snapshot
