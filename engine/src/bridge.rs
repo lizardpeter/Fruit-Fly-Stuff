@@ -51,6 +51,7 @@ struct Request {
     seq: u64,
     left: f32,
     right: f32,
+    facets: Vec<f32>,
 }
 
 /// Separate worker thread prevents Python + sparse matvec from blocking Vulkan.
